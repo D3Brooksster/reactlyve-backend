@@ -1,11 +1,11 @@
 export interface User {
-    id: number;
-    googleId: string;
-    email: string;
-    name:string;
-    picture?: string;
-    role?:string;
-    blocked?:boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }
+  id: string;            // UUID string
+  google_id?: string;
+  email: string;
+  name: string;
+  picture?: string;
+  role: 'user' | 'admin';
+  blocked: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
