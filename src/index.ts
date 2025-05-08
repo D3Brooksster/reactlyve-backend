@@ -5,7 +5,7 @@ import { Pool } from 'pg';
 import { dbConfig } from '../src/config/database.config';
 import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
-
+import messageRoutes from './routes/messageRoutes';
 
 
 const app = express();
@@ -36,6 +36,7 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 app.use('/api/auth',authRoutes)
+app.use('/api/',messageRoutes)
 
 app.get(
   "/",(req,res)=>{
