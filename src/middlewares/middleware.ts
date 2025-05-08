@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../entity/User';
 import { query } from '../config/database.config';
+import { AuthenticatedRequest } from '../controllers/messageController';
 
 declare global {
   namespace Express {
