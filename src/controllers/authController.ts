@@ -65,5 +65,9 @@ export const googleCallback = (req: Request, res: Response) => {
 };
 
 export const getCurrentUser = (req: Request, res: Response) => {
-  return res.json({ user: req.user });
+  try {
+    return res.json({ user: req.user });
+  } catch (error) {
+    
+  }
 };
