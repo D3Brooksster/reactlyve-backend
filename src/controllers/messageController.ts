@@ -45,6 +45,8 @@ const generateShareableLink = (): string => {
 };
 
 export const sendMessage = (req: Request, res: Response) => {
+
+    console.log('Request body:', req.body);
 upload(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
     return res.status(400).json({ error: `Upload error: ${err.message}` });

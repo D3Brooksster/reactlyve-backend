@@ -36,7 +36,7 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 app.use('/api/auth',authRoutes)
-app.use('/api/',messageRoutes)
+app.use('/api/messages',messageRoutes)
 
 app.get(
   "/",(req,res)=>{
