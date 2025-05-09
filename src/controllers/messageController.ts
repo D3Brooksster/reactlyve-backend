@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
+import { uploadVideoToCloudinary } from '../routes/messageRoutes';
 
 export interface AuthenticatedRequest extends Request {
     user?: {
@@ -87,15 +88,15 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
     );
 
     const message = rows[0];
-    console.log(message)
+
     return res.status(201).json({
         id: message.id,
-        senderId: message.senderId,
+        senderId: message.senderid,
         content: message.content,
-        imageUrl: message.imageUrl,
-        shareableLink: message.shareableLink,
-        createdAt: message.createdAt,
-        updatedAt: message.updatedAt
+        imageUrl: message.imagerul,
+        shareableLink: message.shareablelink,
+        createdAt: message.createdat,
+        updatedAt: message.updatedat
     });
     } catch (error) {
     console.error('Error sending message:', error);
@@ -104,27 +105,92 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
 });
 };
 
+// export const getAllMessages = async (req: AuthenticatedRequest, res: Response) => {
+//     try {
+//       const senderId = req.user?.id;
+      
+//       if (!senderId) {
+//         return res.status(401).json({ error: 'User not authenticated' });
+//       }
+  
+//       // Optional query parameters for pagination
+//       const page = parseInt(req.query.page as string) || 1;
+//       const limit = parseInt(req.query.limit as string) || 20;
+//       const offset = (page - 1) * limit;
+  
+//       // Query for messages count
+//       const countResult = await query(
+//         'SELECT COUNT(*) FROM messages WHERE senderId = $1',
+//         [senderId]
+//       );
+//       const totalMessages = parseInt(countResult.rows[0].count);
+      
+//       // Query for messages with pagination
+//       const { rows: messages } = await query(
+//         `SELECT id, content, imageUrl, shareableLink, passcode, viewed, 
+//                 createdAt, updatedAt
+//          FROM messages 
+//          WHERE senderId = $1 
+//          ORDER BY createdAt DESC 
+//          LIMIT $2 OFFSET $3`,
+//         [senderId, limit, offset]
+//       );
+  
+//       // Calculate pagination metadata
+//       const totalPages = Math.ceil(totalMessages / limit);
+      
+//       return res.status(200).json({
+//         messages,
+//         pagination: {
+//           totalMessages,
+//           totalPages,
+//           currentPage: page,
+//           limit
+//         }
+//       });
+//     } catch (error) {
+//       console.error('Error getting all messages:', error);
+//       return res.status(500).json({ error: 'Failed to get all messages' });
+//     }
+//   };
+
 export const getAllMessages = async (req: AuthenticatedRequest, res: Response) => {
     try {
       const senderId = req.user?.id;
-      
+  
       if (!senderId) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
   
-      // Optional query parameters for pagination
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = (page - 1) * limit;
   
-      // Query for messages count
+      // Total messages
       const countResult = await query(
         'SELECT COUNT(*) FROM messages WHERE senderId = $1',
         [senderId]
       );
       const totalMessages = parseInt(countResult.rows[0].count);
-      
-      // Query for messages with pagination
+  
+      // Total viewed messages
+      const viewedResult = await query(
+        'SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true',
+        [senderId]
+      );
+      const viewedMessages = parseInt(viewedResult.rows[0].count);
+  
+      // Total reactions (linked to user's messages)
+      const reactionResult = await query(
+        `SELECT COUNT(*) 
+         FROM reactions r
+         INNER JOIN messages m ON r.messageId = m.id
+         WHERE m.senderId = $1`,
+        [senderId]
+      );
+      const totalReactions = parseInt(reactionResult.rows[0].count);
+  
+      // Paginated message list
       const { rows: messages } = await query(
         `SELECT id, content, imageUrl, shareableLink, passcode, viewed, 
                 createdAt, updatedAt
@@ -135,9 +201,10 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
         [senderId, limit, offset]
       );
   
-      // Calculate pagination metadata
       const totalPages = Math.ceil(totalMessages / limit);
-      
+      const viewRate = totalMessages > 0 ? (viewedMessages / totalMessages) * 100 : 0;
+      const reactionRate = totalMessages > 0 ? (totalReactions / totalMessages) * 100 : 0;
+  
       return res.status(200).json({
         messages,
         pagination: {
@@ -145,6 +212,13 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
           totalPages,
           currentPage: page,
           limit
+        },
+        stats: {
+          totalMessages,
+          viewedMessages,
+          viewRate: viewRate.toFixed(2) + '%',
+          totalReactions,
+          reactionRate: reactionRate.toFixed(2) + '%'
         }
       });
     } catch (error) {
@@ -152,6 +226,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       return res.status(500).json({ error: 'Failed to get all messages' });
     }
   };
+  
 
   export const getMessageById = async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -188,52 +263,188 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
         
       const { linkId } = req.params;
       const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-      console.log(shareableLink)
       // Query the database
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1',
         [shareableLink]
       );
 
-  console.log(rows)
-
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Message not found' });
       }
   
       const message = rows[0];
-      
-      // Check if message is password protected
-      if (message.passcode) {
-        const { passcode } = req.query;
-        
-        // If no passcode provided or incorrect passcode
-        if (!passcode || passcode !== message.passcode) {
-          return res.status(403).json({ 
-            error: 'This message is password protected',
-            requiresPasscode: true
-          });
-        }
-      }
+
+      const hasPasscode = !!message.passcode;
+
   
-      // Mark message as viewed if not already
-      if (!message.viewed) {
-        await query(
-          'UPDATE messages SET viewed = TRUE, updatedAt = NOW() WHERE id = $1',
-          [message.id]
-        );
+      if (hasPasscode) {
+        return res.status(200).json({
+          id: message.id,
+          hasPasscode: true,
+          createdAt: message.createdat
+        });
       }
   
       // Return message without sensitive information
       return res.status(200).json({
         id: message.id,
         content: message.content,
-        imageUrl: message.imageUrl,
-        createdAt: message.createdAt,
-        viewed: message.viewed
+        imageUrl: message.imageurl,
+        hasPasscode: false,
+        createdAt: message.createdat,
       });
     } catch (error) {
       console.error('Error getting message by shareable link:', error);
       return res.status(500).json({ error: 'Failed to get message' });
     }
   };
+
+  export const verifyMessagePasscode = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { passcode } = req.body;
+      
+      const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
+
+      if (!passcode) {
+        return res.status(400).json({ error: 'Passcode is required' });
+      }
+      
+      // Query the database
+      const { rows } = await query(
+        'SELECT * FROM messages WHERE shareableLink = $1 AND passcode LIKE $2',
+        [shareableLink, `%${passcode}`]
+      );
+  
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+  
+      const message = rows[0];
+      
+      // Verify passcode
+      if (message.passcode !== passcode) {
+        return res.status(403).json({ 
+          error: 'Invalid passcode',
+          verified: false
+        });
+      }
+      
+      // Return successful response with message data
+      return res.status(200).json({
+        verified: true,
+        message: {
+          id: message.id,
+          content: message.content,
+          imageUrl: message.imageurl,
+          hasPasscode: true,
+          passcodeVerified: true,
+          createdAt: message.createdat,
+        }
+      });
+    } catch (error) {
+      console.error('Error verifying passcode:', error);
+      return res.status(500).json({ error: 'Failed to verify passcode' });
+    }
+  };
+
+
+  export const recordReaction = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      // Check if we received a video file
+      if (!req.file) {
+        return res.status(400).json({ error: 'No reaction video provided' });
+      }
+      
+      // Get message to confirm it exists
+      const { rows } = await query(
+        'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
+        [id, `%${id}`]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+  
+      const messageId = rows[0].id;
+      
+      // Process the video (in a real app, you would upload to cloud storage)
+    //   const videoUrl = `/uploads/reactions/${req.file.filename}`;
+      const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
+      // Generate thumbnail (mock for this example)
+      const thumbnailUrl = videoUrl;
+      
+      // Calculate video duration (mock for this example - in reality would extract from video metadata)
+      const duration = Math.floor(Math.random() * 30) + 5; // Mock 5-35 seconds
+      
+      // Save reaction in database with all required fields
+      await query(
+        `INSERT INTO reactions 
+          (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt) 
+         VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+        [messageId, videoUrl, thumbnailUrl, duration]
+      );
+      
+      // Notify sender that there's a new reaction (implementation depends on your notification system)
+      try {
+        // Get sender info
+        const { rows: senderRows } = await query(
+          'SELECT senderId FROM messages WHERE id = $1',
+          [messageId]
+        );
+        
+        if (senderRows.length > 0) {
+          const senderId = senderRows[0].senderId;
+          // Here you would trigger any notification logic
+          console.log(`Notifying user ${senderId} about new reaction to message ${messageId}`);
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification:', notificationError);
+        // Don't fail the request if notification fails
+      }
+      
+      return res.status(201).json({ 
+        success: true,
+        message: 'Reaction recorded successfully'
+      });
+    } catch (error) {
+      console.error('Error recording reaction:', error);
+      return res.status(500).json({ error: 'Failed to record reaction' });
+    }
+  };
+  
+
+  export const skipReaction = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
+      // Get message to confirm it exists
+      const { rows } = await query(
+        'SELECT * FROM messages WHERE shareableLink = $1',
+        [shareableLink]
+      );
+  
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+  
+      const messageId = rows[0].id;
+      
+      // Optionally log that reaction was skipped
+    //   await query(
+    //     'INSERT INTO reaction_skips (messageId, createdAt) VALUES ($1, NOW())',
+    //     [messageId]
+    //   );
+      
+      return res.status(200).json({ 
+        success: true,
+        message: 'Reaction skipped'
+      });
+    } catch (error) {
+      console.error('Error skipping reaction:', error);
+      return res.status(500).json({ error: 'Failed to skip reaction' });
+    }
+  };
+  
