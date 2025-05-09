@@ -9,7 +9,7 @@ const router = Router();
 
 router.post('/messages/send', requireAuth, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
-router.get('/messages/:id', requireAuth, getMessageById);
+router.get('/messages/:id', getMessageById);
 router.get('/messages/shared/:linkId', getMessageByShareableLink);
 
 

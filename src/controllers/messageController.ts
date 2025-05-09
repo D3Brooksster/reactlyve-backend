@@ -87,7 +87,7 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
     );
 
     const message = rows[0];
-
+    console.log(message)
     return res.status(201).json({
         id: message.id,
         senderId: message.senderId,
@@ -187,14 +187,16 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
     try {
         
       const { linkId } = req.params;
-      const shareableLink = `${process.env.BASE_URL || 'https://yourdomain.com'}/m/${linkId}`;
-      
+      const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
+      console.log(shareableLink)
       // Query the database
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1',
         [shareableLink]
       );
-  
+
+  console.log(rows)
+
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Message not found' });
       }
