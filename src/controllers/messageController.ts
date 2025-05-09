@@ -185,6 +185,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
 
   export const getMessageByShareableLink = async (req: Request, res: Response) => {
     try {
+        
       const { linkId } = req.params;
       const shareableLink = `${process.env.BASE_URL || 'https://yourdomain.com'}/m/${linkId}`;
       
