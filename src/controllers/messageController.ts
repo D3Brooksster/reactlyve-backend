@@ -358,6 +358,13 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       if (!req.file) {
         return res.status(400).json({ error: 'No reaction video provided' });
       }
+
+      console.log('File details:', {
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      bufferLength: req.file.buffer.length
+    });
+    
       
       // Get message to confirm it exists
       const { rows } = await query(
@@ -372,7 +379,14 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       
       // Process the video (in a real app, you would upload to cloud storage)
     //   const videoUrl = `/uploads/reactions/${req.file.filename}`;
-      const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
+    let videoUrl;
+    try {
+      videoUrl = await uploadVideoToCloudinary(req.file.buffer);
+      console.log('Video uploaded successfully:', videoUrl);
+    } catch (uploadError) {
+      console.error('Error uploading to Cloudinary:', uploadError);
+      return res.status(500).json({ error: 'Failed to upload video', details: uploadError });
+    }
       // Generate thumbnail (mock for this example)
       const thumbnailUrl = videoUrl;
       

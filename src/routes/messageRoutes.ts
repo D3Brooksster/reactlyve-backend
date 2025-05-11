@@ -27,19 +27,52 @@ cloudinary.config({
     }
   });
   
-export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-        { resource_type: 'video', folder: 'reactions' },
-        (error, result) => {
-            if (error) return reject(error);
-            resolve(result?.secure_url || '');
-        }
-        );
+// export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
+//     return new Promise((resolve, reject) => {
+//         const stream = cloudinary.uploader.upload_stream(
+//         { resource_type: 'video', folder: 'reactions' },
+//         (error, result) => {
+//             if (error) return reject(error);
+//             resolve(result?.secure_url || '');
+//         }
+//         );
 
-        Readable.from(buffer).pipe(stream);
-    });
-    };
+//         Readable.from(buffer).pipe(stream);
+//     });
+//     };
+
+export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    // Add logging to verify buffer content
+    console.log('Buffer size:', buffer.length);
+    if (buffer.length === 0) {
+      return reject(new Error('Empty buffer received'));
+    }
+
+    const stream = cloudinary.uploader.upload_stream(
+      { 
+        resource_type: 'video', 
+        folder: 'reactions',
+        // Add additional options if needed
+        format: 'mp4',
+        transformation: [
+          { quality: 'auto' },
+          { fetch_format: 'auto' }
+        ]
+      },
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary error:', error);
+          return reject(error);
+        }
+        resolve(result?.secure_url || '');
+      }
+    );
+
+    // Stream the buffer to Cloudinary
+    Readable.from(buffer).pipe(stream);
+  });
+};
 
 
 router.post('/messages/send', requireAuth, sendMessage);
