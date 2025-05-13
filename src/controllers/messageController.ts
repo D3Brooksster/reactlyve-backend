@@ -6,7 +6,7 @@ import { Readable } from 'stream';
 import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
-import { uploadVideoToCloudinary } from '../routes/messageRoutes';
+import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
 
 export interface AuthenticatedRequest extends Request {
     user?: {
@@ -14,18 +14,40 @@ export interface AuthenticatedRequest extends Request {
     };
 }
 
-const storage = multer.memoryStorage();
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit for messages (separate from reactions/replies)
-}).single('image');
-
 // Configure Cloudinary
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only images and videos
+    const allowedTypes = [
+      'image/jpeg', 
+      'image/png', 
+      'image/gif', 
+      'image/webp',
+      'video/mp4',
+      'video/webm',
+      'video/quicktime' // .mov files
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images and videos are allowed'));
+    }
+  }
+}).single('media'); 
+
+
 
 const uploadToCloudinary = (buffer: Buffer): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -51,58 +73,66 @@ const generateShareableLink = (): string => {
 };
 
 export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
-    upload(req, res, async (err) => {
+  upload(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-        return res.status(400).json({ error: `Upload error: ${err.message}` });
+      return res.status(400).json({ error: `Upload error: ${err.message}` });
     } else if (err) {
-        return res.status(500).json({ error: `Server error: ${err.message}` });
+      return res.status(500).json({ error: `Server error: ${err.message}` });
     }
-
+    
     try {
-        const { content, passcode } = req.body;
+      const { content, passcode } = req.body;
+      const senderId = req.user?.id;
+      
+      // Validate input
+      if (!content) {
+        return res.status(400).json({ error: 'Message content is required' });
+      }
+      
+      // Handle media upload if present
+      let mediaUrl = null;
+      let mediaType = null;
+      
+      if (req.file) {
+        // Determine if it's an image or video based on MIME type
+        mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
         
-        const senderId = req.user?.id;
-
-        // Validate input
-        if (!content) {
-            return res.status(400).json({ error: 'Message content is required' });
-        }
-
-        // Handle image upload if present
-        let imageUrl = null;
-        if (req.file) {
-            imageUrl = await uploadToCloudinary(req.file.buffer);
-        }
-
-        // Generate shareable link
-        const shareableLink = generateShareableLink();
-
-        // Store message in database
-        const { rows } = await query(
-            `INSERT INTO messages (
-            senderId, content, imageUrl, passcode, shareableLink
-            ) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [senderId, content, imageUrl, passcode || null, shareableLink]
+        // Upload to Cloudinary with proper resource_type
+        mediaUrl = await uploadToCloudinarymedia(
+          req.file.buffer, 
+          mediaType as 'image' | 'video'
         );
-
-        const message = rows[0];
-
-        return res.status(201).json({
-            id: message.id,
-            senderId: message.senderid,
-            content: message.content,
-            imageUrl: message.imageurl,
-            shareableLink: message.shareablelink,
-            createdAt: message.createdat,
-            updatedAt: message.updatedat
-        });
+      }
+      
+      // Generate shareable link
+      const shareableLink = generateShareableLink();
+      
+      // Store message in database
+      const { rows } = await query(
+        `INSERT INTO messages (
+          senderId, content, imageUrl, passcode, shareableLink, mediaType
+        ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType]
+      );
+      
+      const message = rows[0];
+      
+      return res.status(201).json({
+        id: message.id,
+        senderId: message.senderid,
+        content: message.content,
+        imageUrl: message.imageurl,
+        mediaType: message.mediatype,
+        shareableLink: message.shareablelink,
+        createdAt: message.createdat,
+        updatedAt: message.updatedat
+      });
     } catch (error) {
-        console.error('Error sending message:', error);
-        return res.status(500).json({ error: 'Failed to send message' });
+      console.error('Error sending message:', error);
+      return res.status(500).json({ error: 'Failed to send message' });
     }
-    });
+  });
 };
-
 export const getAllMessages = async (req: AuthenticatedRequest, res: Response) => {
     try {
       const senderId = req.user?.id;
@@ -209,7 +239,7 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
       }
 
       const message = rows[0];
-      
+      console.log(message,'get message by id')
       return res.status(200).json(message);
     } catch (error) {
       console.error('Error getting message by ID:', error);

@@ -59,6 +59,41 @@ export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
   });
 };
 
+export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'image' | 'video'): Promise<string> => {
+  try {
+    // Convert buffer to Base64 string
+    const base64Data = buffer.toString('base64');
+    
+    // Determine file format and prefix based on resource type
+    const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
+    
+    // Create data URI
+    const dataUri = `${prefix}${base64Data}`;
+    
+    // Upload to Cloudinary
+    const result = await new Promise<any>((resolve, reject) => {
+      cloudinary.uploader.upload(
+        dataUri,
+        {
+          resource_type: resourceType, // 'image' or 'video'
+          folder: 'messages',
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+    });
+    
+    // Return the URL
+    return result.secure_url;
+  } catch (error) {
+    console.error('Cloudinary upload error:', error);
+    throw new Error('Failed to upload file to Cloudinary');
+  }
+};
+
+
 router.post('/messages/send', requireAuth, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
 router.get('/messages/:id', getMessageById);
