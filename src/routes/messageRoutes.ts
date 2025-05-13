@@ -1,7 +1,7 @@
 // src/routes/message.routes.ts
 //@ts-nocheck
 import { Router } from 'express';
-import { sendMessage, getMessageByShareableLink, getMessageById, getAllMessages, verifyMessagePasscode, recordReaction, skipReaction } from '../controllers/messageController'
+import { sendMessage, getMessageByShareableLink, getMessageById, getAllMessages, verifyMessagePasscode, recordReaction, skipReaction, deleteMessageAndReaction } from '../controllers/messageController'
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -82,6 +82,7 @@ router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.post('/reactions/:id/skip', skipReaction);
+router.delete('/messages/:id/delete', deleteMessageAndReaction);
 
 
 

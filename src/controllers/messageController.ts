@@ -172,7 +172,6 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
         [senderId]
       );
       const totalMessages = parseInt(countResult.rows[0].count);
-  
       // Total viewed messages
       const viewedResult = await query(
         'SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true',
@@ -230,8 +229,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
 
   export const getMessageById = async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const { id } = req.params;
-      const senderId = req.user?.id;
+      const { id } = req.params
   
       // Validate UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -240,10 +238,23 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       }
   
       // Query the database
+      // const { rows } = await query(
+      //   'SELECT * FROM messages WHERE id = $1',
+      //   [id]
+      // );
+      // let messageid = id
+      // const {rows} = await query(
+      //   'SELECT * FROM reactions where id = $1',
+      //   [messageid ]
+      // ) 
+
       const { rows } = await query(
-        'SELECT * FROM messages WHERE id = $1 AND senderId = $2',
-        [id, senderId]
-      );
+      `SELECT m.*, r.id as reactionId, r.videoUrl, r.thumbnailUrl, r.duration, r.createdAt as reactionCreatedAt, r.updatedAt as reactionUpdatedAt
+      FROM messages m
+      LEFT JOIN reactions r ON m.id = r.messageId
+      WHERE m.id = $1`,
+      [id]
+    );
   
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Message not found' });
@@ -351,34 +362,25 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
 
 
   export const recordReaction = async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      
-      // Check if we received a video file
-      if (!req.file) {
-        return res.status(400).json({ error: 'No reaction video provided' });
-      }
+  try {
+    const { id } = req.params;
 
-      console.log('File details:', {
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      bufferLength: req.file.buffer.length
-    });
-    
-      
-      // Get message to confirm it exists
-      const { rows } = await query(
-        'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
-        [id, `%${id}`]
-      );
-      if (rows.length === 0) {
-        return res.status(404).json({ error: 'Message not found' });
-      }
-  
-      const messageId = rows[0].id;
-      
-      // Process the video (in a real app, you would upload to cloud storage)
-    //   const videoUrl = `/uploads/reactions/${req.file.filename}`;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No reaction video provided' });
+    }
+
+    // Get message to confirm it exists
+    const { rows } = await query(
+      'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
+      [id, `%${id}`]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const messageId = rows[0].id;
+
     let videoUrl;
     try {
       videoUrl = await uploadVideoToCloudinary(req.file.buffer);
@@ -387,47 +389,60 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       console.error('Error uploading to Cloudinary:', uploadError);
       return res.status(500).json({ error: 'Failed to upload video', details: uploadError });
     }
-      // Generate thumbnail (mock for this example)
-      const thumbnailUrl = videoUrl;
-      
-      // Calculate video duration (mock for this example - in reality would extract from video metadata)
-      const duration = Math.floor(Math.random() * 30) + 5; // Mock 5-35 seconds
-      
-      // Save reaction in database with all required fields
+
+    const thumbnailUrl = videoUrl;
+    const duration = Math.floor(Math.random() * 30) + 5;
+
+    // Check if a reaction already exists for the message
+    const { rows: existingReactions } = await query(
+      'SELECT id FROM reactions WHERE messageId = $1',
+      [messageId]
+    );
+
+    if (existingReactions.length > 0) {
+      // Update existing reaction
+      await query(
+        `UPDATE reactions 
+         SET videoUrl = $1, thumbnailUrl = $2, duration = $3, updatedAt = NOW() 
+         WHERE messageId = $4`,
+        [videoUrl, thumbnailUrl, duration, messageId]
+      );
+    } else {
+      // Insert new reaction
       await query(
         `INSERT INTO reactions 
           (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt) 
          VALUES ($1, $2, $3, $4, NOW(), NOW())`,
         [messageId, videoUrl, thumbnailUrl, duration]
       );
-      
-      // Notify sender that there's a new reaction (implementation depends on your notification system)
-      try {
-        // Get sender info
-        const { rows: senderRows } = await query(
-          'SELECT senderId FROM messages WHERE id = $1',
-          [messageId]
-        );
-        
-        if (senderRows.length > 0) {
-          const senderId = senderRows[0].senderId;
-          // Here you would trigger any notification logic
-          console.log(`Notifying user ${senderId} about new reaction to message ${messageId}`);
-        }
-      } catch (notificationError) {
-        console.error('Error sending notification:', notificationError);
-        // Don't fail the request if notification fails
-      }
-      
-      return res.status(201).json({ 
-        success: true,
-        message: 'Reaction recorded successfully'
-      });
-    } catch (error) {
-      console.error('Error recording reaction:', error);
-      return res.status(500).json({ error: 'Failed to record reaction' });
     }
-  };
+
+    // Notify sender
+    try {
+      const { rows: senderRows } = await query(
+        'SELECT senderId FROM messages WHERE id = $1',
+        [messageId]
+      );
+
+      if (senderRows.length > 0) {
+        const senderId = senderRows[0].senderId;
+        console.log(`Notifying user ${senderId} about new reaction to message ${messageId}`);
+      }
+    } catch (notificationError) {
+      console.error('Error sending notification:', notificationError);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Reaction recorded successfully'
+    });
+
+  } catch (error) {
+    console.error('Error recording reaction:', error);
+    return res.status(500).json({ error: 'Failed to record reaction' });
+  }
+};
+
   
 
   export const skipReaction = async (req: Request, res: Response) => {
@@ -462,3 +477,35 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
     }
   };
   
+  export const deleteMessageAndReaction = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // First, find the message ID (in case it's from shareableLink)
+    const { rows } = await query(
+      'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
+      [id, `%${id}`]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const messageId = rows[0].id;
+
+    // Delete reaction if exists
+    await query('DELETE FROM reactions WHERE messageId = $1', [messageId]);
+
+    // Delete the message itself
+    await query('DELETE FROM messages WHERE id = $1', [messageId]);
+
+    return res.status(200).json({
+      success: true,
+      message: `Message and related reaction deleted successfully.`,
+    });
+
+  } catch (error) {
+    console.error('Error deleting message and reaction:', error);
+    return res.status(500).json({ error: 'Failed to delete message and reaction' });
+  }
+};
