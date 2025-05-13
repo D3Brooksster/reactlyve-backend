@@ -17,7 +17,7 @@ export interface AuthenticatedRequest extends Request {
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit for messages (separate from reactions/replies)
+  limits: { fileSize: 10 * 1024 * 1024 }
 }).single('image');
 
 // Configure Cloudinary
@@ -63,21 +63,17 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
         
         const senderId = req.user?.id;
 
-        // Validate input
         if (!content) {
             return res.status(400).json({ error: 'Message content is required' });
         }
 
-        // Handle image upload if present
         let imageUrl = null;
         if (req.file) {
             imageUrl = await uploadToCloudinary(req.file.buffer);
         }
 
-        // Generate shareable link
         const shareableLink = generateShareableLink();
 
-        // Store message in database
         const { rows } = await query(
             `INSERT INTO messages (
             senderId, content, imageUrl, passcode, shareableLink
@@ -115,21 +111,18 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = (page - 1) * limit;
 
-      // Total messages
       const countResult = await query(
         'SELECT COUNT(*) FROM messages WHERE senderId = $1',
         [senderId]
       );
       const totalMessages = parseInt(countResult.rows[0].count);
 
-      // Total viewed messages
       const viewedResult = await query(
         'SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true',
         [senderId]
       );
       const viewedMessages = parseInt(viewedResult.rows[0].count);
 
-      // Total reactions (linked to user's messages)
       const reactionResult = await query(
         `SELECT COUNT(*) 
          FROM reactions r
@@ -139,7 +132,6 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       );
       const totalReactions = parseInt(reactionResult.rows[0].count);
 
-      // Paginated message list
       const { rows: messages } = await query(
         `SELECT id, content, imageUrl, shareableLink, passcode, viewed, 
                 createdAt, updatedAt
@@ -181,13 +173,11 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
       const { id } = req.params;
       const senderId = req.user?.id;
 
-      // Validate UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(id)) {
         return res.status(400).json({ error: 'Invalid message ID format' });
       }
 
-      // Query the database
       const { rows } = await query(
         'SELECT * FROM messages WHERE id = $1 AND senderId = $2',
         [id, senderId]
@@ -198,8 +188,17 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
       }
 
       const message = rows[0];
-      
-      return res.status(200).json(message);
+
+      // Fetch replies for this message
+      const { rows: replies } = await query(
+        'SELECT id, text, createdAt FROM replies WHERE messageId = $1 ORDER BY createdAt DESC',
+        [id]
+      );
+
+      return res.status(200).json({
+        ...message,
+        replies,
+      });
     } catch (error) {
       console.error('Error getting message by ID:', error);
       return res.status(500).json({ error: 'Failed to get message' });
@@ -210,7 +209,6 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
     try {
         const { linkId } = req.params;
         const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-        // Query the database
         const { rows } = await query(
           'SELECT * FROM messages WHERE shareableLink = $1',
           [shareableLink]
@@ -232,7 +230,6 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
           });
         }
 
-        // Return message without sensitive information
         return res.status(200).json({
           id: message.id,
           content: message.content,
@@ -257,7 +254,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Passcode is required' });
       }
       
-      // Query the database
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1 AND passcode LIKE $2',
         [shareableLink, `%${passcode}`]
@@ -269,7 +265,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
 
       const message = rows[0];
       
-      // Verify passcode
       if (message.passcode !== passcode) {
         return res.status(403).json({ 
           error: 'Invalid passcode',
@@ -277,7 +272,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
         });
       }
       
-      // Return successful response with message data
       return res.status(200).json({
         verified: true,
         message: {
@@ -299,7 +293,6 @@ export const recordReaction = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       
-      // Check if we received a video file
       if (!req.file) {
         return res.status(400).json({ error: 'No reaction video provided' });
       }
@@ -310,7 +303,6 @@ export const recordReaction = async (req: Request, res: Response) => {
         bufferLength: req.file.buffer.length
       });
       
-      // Get message to confirm it exists
       const { rows } = await query(
         'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
         [id, `%${id}`]
@@ -321,7 +313,6 @@ export const recordReaction = async (req: Request, res: Response) => {
 
       const messageId = rows[0].id;
       
-      // Process the video (upload to Cloudinary)
       let videoUrl;
       try {
         videoUrl = await uploadVideoToCloudinary(req.file.buffer);
@@ -330,13 +321,10 @@ export const recordReaction = async (req: Request, res: Response) => {
         console.error('Error uploading to Cloudinary:', uploadError);
         return res.status(500).json({ error: 'Failed to upload video', details: uploadError });
       }
-      // Generate thumbnail (mock for this example)
       const thumbnailUrl = videoUrl;
       
-      // Calculate video duration (mock for this example - in reality would extract from video metadata)
-      const duration = Math.floor(Math.random() * 30) + 5; // Mock 5-35 seconds
+      const duration = Math.floor(Math.random() * 30) + 5;
       
-      // Save reaction in database with all required fields
       await query(
         `INSERT INTO reactions 
           (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt) 
@@ -344,9 +332,7 @@ export const recordReaction = async (req: Request, res: Response) => {
         [messageId, videoUrl, thumbnailUrl, duration]
       );
       
-      // Notify sender that there's a new reaction (implementation depends on your notification system)
       try {
-        // Get sender info
         const { rows: senderRows } = await query(
           'SELECT senderId FROM messages WHERE id = $1',
           [messageId]
@@ -354,12 +340,10 @@ export const recordReaction = async (req: Request, res: Response) => {
         
         if (senderRows.length > 0) {
           const senderId = senderRows[0].senderId;
-          // Here you would trigger any notification logic
           console.log(`Notifying user ${senderId} about new reaction to message ${messageId}`);
         }
       } catch (notificationError) {
         console.error('Error sending notification:', notificationError);
-        // Don't fail the request if notification fails
       }
       
       return res.status(201).json({ 
@@ -372,22 +356,19 @@ export const recordReaction = async (req: Request, res: Response) => {
     }
 };
 
-export const recordReply = async (req: Request, res: Response) => {
+export const recordTextReply = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const { text } = req.body;
       
-      // Check if we received a video file
-      if (!req.file) {
-        return res.status(400).json({ error: 'No reply video provided' });
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        return res.status(400).json({ error: 'Reply text is required and must be a non-empty string' });
       }
 
-      console.log('File details:', {
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        bufferLength: req.file.buffer.length
-      });
+      if (text.length > 500) {
+        return res.status(400).json({ error: 'Reply text cannot exceed 500 characters' });
+      }
       
-      // Get message to confirm it exists
       const { rows } = await query(
         'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
         [id, `%${id}`]
@@ -398,31 +379,13 @@ export const recordReply = async (req: Request, res: Response) => {
 
       const messageId = rows[0].id;
       
-      // Process the video (upload to Cloudinary)
-      let videoUrl;
-      try {
-        videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-        console.log('Reply video uploaded successfully:', videoUrl);
-      } catch (uploadError) {
-        console.error('Error uploading reply to Cloudinary:', uploadError);
-        return res.status(500).json({ error: 'Failed to upload reply video', details: uploadError });
-      }
-      
-      // Generate thumbnail (mock for this example)
-      const thumbnailUrl = videoUrl;
-      
-      // Calculate video duration (mock for this example - in reality would extract from video metadata)
-      const duration = Math.floor(Math.random() * 180) + 5; // Mock 5-185 seconds (up to 3 minutes)
-      
-      // Save reply in database with all required fields
       await query(
         `INSERT INTO replies 
-          (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt) 
-         VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-        [messageId, videoUrl, thumbnailUrl, duration]
+          (messageId, text, createdAt, updatedAt) 
+         VALUES ($1, $2, NOW(), NOW())`,
+        [messageId, text.trim()]
       );
       
-      // Notify sender that there's a new reply (implementation depends on your notification system)
       try {
         const { rows: senderRows } = await query(
           'SELECT senderId FROM messages WHERE id = $1',
@@ -435,12 +398,11 @@ export const recordReply = async (req: Request, res: Response) => {
         }
       } catch (notificationError) {
         console.error('Error sending notification:', notificationError);
-        // Don't fail the request if notification fails
       }
       
       return res.status(201).json({ 
         success: true,
-        message: 'Reply recorded successfully'
+        message: 'Reply sent successfully'
       });
     } catch (error) {
       console.error('Error recording reply:', error);
@@ -452,7 +414,6 @@ export const skipReaction = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-      // Get message to confirm it exists
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1',
         [shareableLink]
@@ -463,12 +424,6 @@ export const skipReaction = async (req: Request, res: Response) => {
       }
 
       const messageId = rows[0].id;
-      
-      // Optionally log that reaction was skipped
-      // await query(
-      //   'INSERT INTO reaction_skips (messageId, createdAt) VALUES ($1, NOW())',
-      //   [messageId]
-      // );
       
       return res.status(200).json({ 
         success: true,
