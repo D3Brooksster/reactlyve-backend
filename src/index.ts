@@ -7,7 +7,6 @@ import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
 
-
 const app = express();
 
 app.use(express.json());
@@ -23,7 +22,6 @@ app.use(
 
 app.use(passport.initialize());
 
-
 // Create a connection pool
 const pool = new Pool(dbConfig);
 
@@ -35,12 +33,13 @@ pool.query('SELECT NOW()', (err, res) => {
     console.log('Connected to database:', res.rows[0]);
   }
 });
-app.use('/api/auth',authRoutes)
-app.use('/api',messageRoutes)
+app.use('/api/auth', authRoutes);
+app.use('/api', messageRoutes);
 
 app.get(
-  "/",(req,res)=>{
-    res.send("its working")
+  "/",
+  (req, res) => {
+    res.send("its working");
   }
 );
 
