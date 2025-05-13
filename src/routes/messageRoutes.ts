@@ -1,7 +1,7 @@
 // src/routes/message.routes.ts
 //@ts-nocheck
 import { Router } from 'express';
-import { sendMessage, getMessageByShareableLink, getMessageById, getAllMessages, verifyMessagePasscode, recordReaction, skipReaction, deleteMessageAndReaction, recordReply } from '../controllers/messageController'
+import { sendMessage, getMessageByShareableLink, getMessageById, getAllMessages, verifyMessagePasscode, recordReaction, skipReaction, deleteMessageAndReaction, recordTextReply } from '../controllers/messageController'
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -16,8 +16,8 @@ cloudinary.config({
 });
 
 const upload = multer({
-  storage: multer.memoryStorage(), // 👈 this allows access to file.buffer
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('video/')) {
       cb(null, true);
@@ -29,7 +29,6 @@ const upload = multer({
 
 export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
   return new Promise((resolve, reject) => {
-    // Add logging to verify buffer content
     console.log('Buffer size:', buffer.length);
     if (buffer.length === 0) {
       return reject(new Error('Empty buffer received'));
@@ -54,7 +53,6 @@ export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
       }
     );
 
-    // Stream the buffer to Cloudinary
     Readable.from(buffer).pipe(stream);
   });
 };
@@ -100,7 +98,7 @@ router.get('/messages/:id', getMessageById);
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
-router.post('/replies/:id', upload.single('video'), recordReply);
+router.post('/replies/:id', recordTextReply); 
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 

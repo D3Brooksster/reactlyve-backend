@@ -145,7 +145,6 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = (page - 1) * limit;
 
-      // Total messages
       const countResult = await query(
         'SELECT COUNT(*) FROM messages WHERE senderId = $1',
         [senderId]
@@ -158,7 +157,6 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       );
       const viewedMessages = parseInt(viewedResult.rows[0].count);
 
-      // Total reactions (linked to user's messages)
       const reactionResult = await query(
         `SELECT COUNT(*) 
          FROM reactions r
@@ -168,7 +166,6 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       );
       const totalReactions = parseInt(reactionResult.rows[0].count);
 
-      // Paginated message list
       const { rows: messages } = await query(
         `SELECT id, content, imageUrl, shareableLink, passcode, viewed, 
                 createdAt, updatedAt
@@ -251,7 +248,6 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
     try {
         const { linkId } = req.params;
         const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-        // Query the database
         const { rows } = await query(
           'SELECT * FROM messages WHERE shareableLink = $1',
           [shareableLink]
@@ -273,7 +269,6 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
           });
         }
 
-        // Return message without sensitive information
         return res.status(200).json({
           id: message.id,
           content: message.content,
@@ -298,7 +293,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Passcode is required' });
       }
       
-      // Query the database
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1 AND passcode LIKE $2',
         [shareableLink, `%${passcode}`]
@@ -310,7 +304,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
 
       const message = rows[0];
       
-      // Verify passcode
       if (message.passcode !== passcode) {
         return res.status(403).json({ 
           error: 'Invalid passcode',
@@ -318,7 +311,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
         });
       }
       
-      // Return successful response with message data
       return res.status(200).json({
         verified: true,
         message: {
@@ -419,89 +411,55 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
   }
 };
 
-  
+export const recordTextReply = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
 
-export const recordReply = async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      
-      // Check if we received a video file
-      if (!req.file) {
-        return res.status(400).json({ error: 'No reply video provided' });
-      }
-
-      console.log('File details:', {
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        bufferLength: req.file.buffer.length
-      });
-      
-      // Get message to confirm it exists
-      const { rows } = await query(
-        'SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2',
-        [id, `%${id}`]
-      );
-      if (rows.length === 0) {
-        return res.status(404).json({ error: 'Message not found' });
-      }
-
-      const messageId = rows[0].id;
-      
-      // Process the video (upload to Cloudinary)
-      let videoUrl;
-      try {
-        videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-        console.log('Reply video uploaded successfully:', videoUrl);
-      } catch (uploadError) {
-        console.error('Error uploading reply to Cloudinary:', uploadError);
-        return res.status(500).json({ error: 'Failed to upload reply video', details: uploadError });
-      }
-      
-      // Generate thumbnail (mock for this example)
-      const thumbnailUrl = videoUrl;
-      
-      // Calculate video duration (mock for this example - in reality would extract from video metadata)
-      const duration = Math.floor(Math.random() * 180) + 5; // Mock 5-185 seconds (up to 3 minutes)
-      
-      // Save reply in database with all required fields
-      await query(
-        `INSERT INTO replies 
-          (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt) 
-         VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-        [messageId, videoUrl, thumbnailUrl, duration]
-      );
-      
-      // Notify sender that there's a new reply (implementation depends on your notification system)
-      try {
-        const { rows: senderRows } = await query(
-          'SELECT senderId FROM messages WHERE id = $1',
-          [messageId]
-        );
-        
-        if (senderRows.length > 0) {
-          const senderId = senderRows[0].senderId;
-          console.log(`Notifying user ${senderId} about new reply to message ${messageId}`);
-        }
-      } catch (notificationError) {
-        console.error('Error sending notification:', notificationError);
-        // Don't fail the request if notification fails
-      }
-      
-      return res.status(201).json({ 
-        success: true,
-        message: 'Reply recorded successfully'
-      });
-    } catch (error) {
-      console.error('Error recording reply:', error);
-      return res.status(500).json({ error: 'Failed to record reply' });
+    // validate
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Reply text is required' });
     }
+    if (text.length > 500) {
+      return res
+        .status(400)
+        .json({ error: 'Reply text cannot exceed 500 characters' });
+    }
+
+    // make sure message exists
+    const { rows } = await query(
+      'SELECT id FROM messages WHERE id = $1',
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // update that row's isReply column with the reply text
+    await query(
+      `UPDATE messages
+         SET isReply = $1,
+             updatedAt = NOW()
+       WHERE id = $2`,
+      [text.trim(), id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Reply saved in isReply column',
+    });
+  } catch (error) {
+    console.error('Error recording reply:', error);
+    return res.status(500).json({ error: 'Failed to record reply' });
+  }
 };
+
+
 
 export const skipReaction = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-      // Get message to confirm it exists
       const { rows } = await query(
         'SELECT * FROM messages WHERE shareableLink = $1',
         [shareableLink]
@@ -512,12 +470,6 @@ export const skipReaction = async (req: Request, res: Response) => {
       }
 
       const messageId = rows[0].id;
-      
-      // Optionally log that reaction was skipped
-      // await query(
-      //   'INSERT INTO reaction_skips (messageId, createdAt) VALUES ($1, NOW())',
-      //   [messageId]
-      // );
       
       return res.status(200).json({ 
         success: true,
