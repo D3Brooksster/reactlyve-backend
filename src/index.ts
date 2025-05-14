@@ -2,7 +2,7 @@ import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import { Pool } from 'pg';
-import { dbConfig } from '../src/config/database.config';
+import { dbConfig } from './config/database.config';
 import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
