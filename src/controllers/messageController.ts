@@ -203,61 +203,46 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
 };
 
 export const getMessageById = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const { id } = req.params
-  
-      // Validate UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(id)) {
-        return res.status(400).json({ error: 'Invalid message ID format' });
-      }
+  try {
+    const { id } = req.params;
 
-      // Query the database
-      // const { rows } = await query(
-      //   'SELECT * FROM messages WHERE id = $1',
-      //   [id]
-      // );
-      // let messageid = id
-      // const {rows} = await query(
-      //   'SELECT * FROM reactions where id = $1',
-      //   [messageid ]
-      // ) 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({ error: 'Invalid message ID format' });
+    }
 
+    // Get message with optional reaction info
     const messageResult = await query(
-      `SELECT m.*, r.id as reactionId, r.videoUrl, r.thumbnailUrl, r.duration, r.createdAt as reactionCreatedAt, r.updatedAt as reactionUpdatedAt
+      `SELECT m.*, r.id as reactionId, r.videoUrl, r.thumbnailUrl, r.duration, 
+              r.createdAt as reactionCreatedAt, r.updatedAt as reactionUpdatedAt
        FROM messages m
        LEFT JOIN reactions r ON m.id = r.messageId
        WHERE m.id = $1`,
       [id]
     );
-    
+
     if (messageResult.rows.length === 0) {
       return res.status(404).json({ error: 'Message not found' });
     }
-    
+
     const message = messageResult.rows[0];
-    
+
+    // Get replies
     const repliesResult = await query(
       `SELECT id, text, createdAt FROM replies WHERE messageId = $1 ORDER BY createdAt ASC`,
       [id]
     );
-    
+
     return res.status(200).json({
       ...message,
-      replies: repliesResult.rows,
+      replies: repliesResult.rows
     });
-  
-      if (rows.length === 0) {
-        return res.status(404).json({ error: 'Message not found' });
-      }
 
-      const message = rows[0];
-      console.log(message,'get message by id')
-      return res.status(200).json(message);
-    } catch (error) {
-      console.error('Error getting message by ID:', error);
-      return res.status(500).json({ error: 'Failed to get message' });
-    }
+  } catch (error) {
+    console.error('Error getting message by ID:', error);
+    return res.status(500).json({ error: 'Failed to get message' });
+  }
 };
 
 export const getMessageByShareableLink = async (req: Request, res: Response) => {
