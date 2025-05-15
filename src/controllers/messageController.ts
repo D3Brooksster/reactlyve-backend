@@ -425,12 +425,16 @@ export const recordTextReply = async (req: Request, res: Response) => {
         .status(400)
         .json({ error: 'Reply text cannot exceed 500 characters' });
     }
-
+    console.log('Incoming reply text:', text);
+    console.log('Replying to message ID:', id);
+      
     // make sure message exists
     const { rows } = await query(
       'SELECT id FROM messages WHERE id = $1',
       [id]
     );
+    console.log('Message fetch result:', rows);
+      
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Message not found' });
     }
