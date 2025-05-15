@@ -441,15 +441,14 @@ export const recordTextReply = async (req: Request, res: Response) => {
 
     // update that row's isReply column with the reply text
     await query(
-      `UPDATE messages
-           `INSERT INTO replies (messageId, text, createdAt, updatedAt)
-           VALUES ($1, $2, NOW(), NOW())`,
-      [text.trim(), id]
+      `INSERT INTO replies (messageId, text, createdAt, updatedAt)
+       VALUES ($1, $2, NOW(), NOW())`,
+      [id, text.trim()]
     );
 
     return res.status(200).json({
       success: true,
-      message: 'Reply saved in isReply column',
+      message: 'Reply saved to replies table',
     });
   } catch (error) {
     console.error('Error recording reply:', error);
