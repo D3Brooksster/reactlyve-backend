@@ -223,13 +223,29 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
       //   [messageid ]
       // ) 
 
-      const { rows } = await query(
+    const messageResult = await query(
       `SELECT m.*, r.id as reactionId, r.videoUrl, r.thumbnailUrl, r.duration, r.createdAt as reactionCreatedAt, r.updatedAt as reactionUpdatedAt
-      FROM messages m
-      LEFT JOIN reactions r ON m.id = r.messageId
-      WHERE m.id = $1`,
+       FROM messages m
+       LEFT JOIN reactions r ON m.id = r.messageId
+       WHERE m.id = $1`,
       [id]
     );
+    
+    if (messageResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    const message = messageResult.rows[0];
+    
+    const repliesResult = await query(
+      `SELECT id, text, createdAt FROM replies WHERE messageId = $1 ORDER BY createdAt ASC`,
+      [id]
+    );
+    
+    return res.status(200).json({
+      ...message,
+      replies: repliesResult.rows,
+    });
   
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Message not found' });
