@@ -116,17 +116,18 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
       );
       
       const message = rows[0];
-      
-      return res.status(201).json({
-        id: message.id,
-        senderId: message.senderid,
-        content: message.content,
-        imageUrl: message.imageurl,
-        mediaType: message.mediatype,
-        shareableLink: message.shareablelink,
-        createdAt: message.createdat,
-        updatedAt: message.updatedat
-      });
+
+    return res.status(201).json({
+      id: message.id,
+      senderId: message.senderid,
+      content: message.content,
+      imageUrl: message.imageurl,
+      mediaType: message.mediatype,
+      shareableLink: message.shareablelink,
+      createdAt: message.createdat ? new Date(message.createdat).toISOString() : null,
+      updatedAt: message.updatedat ? new Date(message.updatedat).toISOString() : null
+    });
+        
     } catch (error) {
       console.error('Error sending message:', error);
       return res.status(500).json({ error: 'Failed to send message' });
@@ -180,22 +181,28 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       const viewRate = totalMessages > 0 ? (viewedMessages / totalMessages) * 100 : 0;
       const reactionRate = totalMessages > 0 ? (totalReactions / totalMessages) * 100 : 0;
 
-      return res.status(200).json({
-        messages,
-        pagination: {
-          totalMessages,
-          totalPages,
-          currentPage: page,
-          limit
-        },
-        stats: {
-          totalMessages,
-          viewedMessages,
-          viewRate: viewRate.toFixed(2) + '%',
-          totalReactions,
-          reactionRate: reactionRate.toFixed(2) + '%'
-        }
-      });
+    const formattedMessages = messages.map((msg) => ({
+      ...msg,
+      createdAt: msg.createdat ? new Date(msg.createdat).toISOString() : null,
+      updatedAt: msg.updatedat ? new Date(msg.updatedat).toISOString() : null,
+    }));
+    
+    return res.status(200).json({
+      messages: formattedMessages,
+      pagination: {
+        totalMessages,
+        totalPages,
+        currentPage: page,
+        limit
+      },
+      stats: {
+        totalMessages,
+        viewedMessages,
+        viewRate: viewRate.toFixed(2) + '%',
+        totalReactions,
+        reactionRate: reactionRate.toFixed(2) + '%'
+      }
+    });
     } catch (error) {
       console.error('Error getting all messages:', error);
       return res.status(500).json({ error: 'Failed to get all messages' });
@@ -236,8 +243,14 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
 
     return res.status(200).json({
       ...message,
-      replies: repliesResult.rows
+      createdAt: message.createdat ? new Date(message.createdat).toISOString() : null,
+      updatedAt: message.updatedat ? new Date(message.updatedat).toISOString() : null,
+      replies: repliesResult.rows.map(reply => ({
+        ...reply,
+        createdAt: reply.createdat ? new Date(reply.createdat).toISOString() : null
+      }))
     });
+
 
   } catch (error) {
     console.error('Error getting message by ID:', error);
@@ -263,11 +276,11 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
         const hasPasscode = !!message.passcode;
 
         if (hasPasscode) {
-          return res.status(200).json({
-            id: message.id,
-            hasPasscode: true,
-            createdAt: message.createdat
-          });
+            return res.status(200).json({
+              id: message.id,
+              hasPasscode: true,
+              createdAt: message.createdat ? new Date(message.createdat).toISOString() : null
+            });
         }
 
         return res.status(200).json({
@@ -275,7 +288,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
           content: message.content,
           imageUrl: message.imageurl,
           hasPasscode: false,
-          createdAt: message.createdat,
+          createdAt: message.createdat ? new Date(message.createdat).toISOString() : null,
         });
     } catch (error) {
       console.error('Error getting message by shareable link:', error);
@@ -320,7 +333,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
           imageUrl: message.imageurl,
           hasPasscode: true,
           passcodeVerified: true,
-          createdAt: message.createdat,
+          createdAt: message.createdat ? new Date(message.createdat).toISOString() : null,
         }
       });
     } catch (error) {
