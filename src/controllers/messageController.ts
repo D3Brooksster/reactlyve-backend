@@ -442,9 +442,8 @@ export const recordTextReply = async (req: Request, res: Response) => {
     // update that row's isReply column with the reply text
     await query(
       `UPDATE messages
-         SET isReply = $1,
-             updatedAt = NOW()
-       WHERE id = $2`,
+           `INSERT INTO replies (messageId, text, createdAt, updatedAt)
+           VALUES ($1, $2, NOW(), NOW())`,
       [text.trim(), id]
     );
 
