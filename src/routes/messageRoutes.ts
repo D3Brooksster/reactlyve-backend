@@ -104,7 +104,7 @@ router.get('/messages', requireAuth, getAllMessages);
 router.get('/messages/:id', getMessageById);
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
-router.post('/reactions/init/:messageId', initReaction);
+router.post('/reactions/init/:messageId', express.json(), initReaction);
 router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.get('/reactions/message/:messageId', getReactionsByMessageId);
