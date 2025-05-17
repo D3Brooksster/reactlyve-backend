@@ -425,9 +425,14 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
       console.error('Error sending notification:', notificationError);
     }
 
+    const reactionId = existingReactions.length
+      ? existingReactions[0].id
+      : (await query('SELECT id FROM reactions WHERE messageId = $1 ORDER BY createdAt DESC LIMIT 1', [messageId])).rows[0].id;
+    
     return res.status(201).json({
       success: true,
-      message: 'Reaction recorded successfully'
+      message: 'Reaction recorded successfully',
+      reactionId,
     });
 
   } catch (error) {
