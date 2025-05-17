@@ -1,7 +1,19 @@
 // src/routes/message.routes.ts
 //@ts-nocheck
 import { Router } from 'express';
-import { sendMessage, getMessageByShareableLink, getMessageById, getAllMessages, verifyMessagePasscode, recordReaction, skipReaction, deleteMessageAndReaction, recordTextReply } from '../controllers/messageController'
+import {
+  sendMessage,
+  getMessageByShareableLink,
+  getMessageById,
+  getAllMessages,
+  verifyMessagePasscode,
+  recordReaction,
+  skipReaction,
+  deleteMessageAndReaction,
+  recordTextReply,
+  initReaction,               // ✅ New controller
+  uploadReactionVideo         // ✅ New controller
+} from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -9,12 +21,14 @@ import { Readable } from 'stream';
 
 const router = Router();
 
+// === Cloudinary setup ===
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-    api_key: process.env.CLOUDINARY_API_KEY!,
-    api_secret: process.env.CLOUDINARY_API_SECRET!,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
+// === Multer setup for video uploads ===
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -27,16 +41,15 @@ const upload = multer({
   }
 });
 
+// === Cloudinary upload utilities ===
 export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length);
-    if (buffer.length === 0) {
-      return reject(new Error('Empty buffer received'));
-    }
+    if (buffer.length === 0) return reject(new Error('Empty buffer received'));
 
     const stream = cloudinary.uploader.upload_stream(
-      { 
-        resource_type: 'video', 
+      {
+        resource_type: 'video',
         folder: 'reactions',
         format: 'mp4',
         transformation: [
@@ -59,21 +72,15 @@ export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
 
 export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'image' | 'video'): Promise<string> => {
   try {
-    // Convert buffer to Base64 string
     const base64Data = buffer.toString('base64');
-    
-    // Determine file format and prefix based on resource type
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
-    
-    // Create data URI
     const dataUri = `${prefix}${base64Data}`;
-    
-    // Upload to Cloudinary
+
     const result = await new Promise<any>((resolve, reject) => {
       cloudinary.uploader.upload(
         dataUri,
         {
-          resource_type: resourceType, // 'image' or 'video'
+          resource_type: resourceType,
           folder: 'messages',
         },
         (error, result) => {
@@ -82,8 +89,7 @@ export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'ima
         }
       );
     });
-    
-    // Return the URL
+
     return result.secure_url;
   } catch (error) {
     console.error('Cloudinary upload error:', error);
@@ -91,11 +97,14 @@ export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'ima
   }
 };
 
+// === Routes ===
 router.post('/messages/send', requireAuth, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
 router.get('/messages/:id', getMessageById);
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
+router.post('/reactions/init/:messageId', initReaction);
+router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
