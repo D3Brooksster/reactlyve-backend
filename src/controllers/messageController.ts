@@ -350,6 +350,8 @@ export const initReaction = async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const { sessionId } = req.body;
 
+  console.log("Received sessionId:", sessionId);
+  
   if (!sessionId) return res.status(400).json({ error: 'Missing session ID' });
 
   try {
