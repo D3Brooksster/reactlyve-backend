@@ -11,8 +11,9 @@ import {
   skipReaction,
   deleteMessageAndReaction,
   recordTextReply,
-  initReaction,               // ✅ New controller
-  uploadReactionVideo         // ✅ New controller
+  initReaction,         
+  uploadReactionVideo,
+  getReactionsByMessageId
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
@@ -106,6 +107,7 @@ router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
 router.post('/reactions/init/:messageId', initReaction);
 router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
+router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
