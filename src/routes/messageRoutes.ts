@@ -19,6 +19,7 @@ import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import express from 'express';
 
 const router = Router();
 
