@@ -348,34 +348,35 @@ export const deleteMessageAndReaction = async (req: Request, res: Response) => {
 
 export const initReaction = async (req: Request, res: Response) => {
   const { messageId } = req.params;
+  const { sessionId } = req.body;
+
+  if (!sessionId) return res.status(400).json({ error: 'Missing session ID' });
 
   try {
-    // Confirm the message exists
+    // Verify message exists
     const { rows: messageRows } = await query(
       'SELECT id FROM messages WHERE id = $1',
       [messageId]
     );
-
     if (!messageRows.length) {
-      return res.status(404).json({ error: 'Message not found for reaction init' });
+      return res.status(404).json({ error: 'Message not found' });
     }
 
-    // Check if a reaction already exists to prevent duplicates
-    const { rows: existingReactions } = await query(
-      'SELECT id FROM reactions WHERE messageId = $1',
-      [messageId]
+    // Check for existing reaction by session
+    const { rows: existing } = await query(
+      `SELECT id FROM reactions WHERE messageId = $1 AND sessionId = $2`,
+      [messageId, sessionId]
     );
 
-    if (existingReactions.length > 0) {
-      return res.status(200).json({ reactionId: existingReactions[0].id });
+    if (existing.length > 0) {
+      return res.status(200).json({ reactionId: existing[0].id });
     }
 
     // Create new reaction
     const { rows: inserted } = await query(
-      `INSERT INTO reactions (messageId, createdAt, updatedAt)
-       VALUES ($1, NOW(), NOW())
-       RETURNING id`,
-      [messageId]
+      `INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt)
+       VALUES ($1, $2, NOW(), NOW()) RETURNING id`,
+      [messageId, sessionId]
     );
 
     return res.status(201).json({ reactionId: inserted[0].id });
@@ -384,8 +385,6 @@ export const initReaction = async (req: Request, res: Response) => {
     console.error('❌ Error initializing reaction:', {
       message: error.message,
       stack: error.stack,
-      detail: error.detail,
-      code: error.code
     });
 
     return res.status(500).json({ error: 'Failed to initialize reaction' });
