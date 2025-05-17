@@ -418,3 +418,22 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to upload reaction video' });
   }
 };
+
+export const getReactionsByMessageId = async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+
+  try {
+    const { rows } = await query(
+      `SELECT id, videoUrl, thumbnailUrl, duration, createdAt, updatedAt 
+       FROM reactions 
+       WHERE messageId = $1 
+       ORDER BY createdAt ASC`,
+      [messageId]
+    );
+
+    return res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching reactions by message ID:', error);
+    return res.status(500).json({ error: 'Failed to fetch reactions' });
+  }
+};
