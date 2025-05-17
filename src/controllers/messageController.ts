@@ -375,12 +375,19 @@ export const initReaction = async (req: Request, res: Response) => {
     }
 
     // Create new reaction
-    const { rows: inserted } = await query(
-      `INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt)
-       VALUES ($1, $2, NOW(), NOW()) RETURNING id`,
-      [messageId, sessionId]
-    );
+    console.log("About to insert new reaction with values:", { messageId, sessionId });
 
+    const insertQuery = `
+      INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt)
+      VALUES ($1, $2, NOW(), NOW()) RETURNING id`;
+
+    console.log("Insert query:", insertQuery);
+
+    const { rows: inserted } = await query(insertQuery, [messageId, sessionId]);
+
+    console.log("Reaction inserted with ID:", inserted[0]?.id);
+
+    
     return res.status(201).json({ reactionId: inserted[0].id });
 
   } catch (error: any) {
