@@ -98,7 +98,7 @@ router.get('/messages/:id', getMessageById);
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
-router.post('/replies/:id', recordTextReply); 
+router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 
