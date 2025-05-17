@@ -350,15 +350,27 @@ export const initReaction = async (req: Request, res: Response) => {
   const { messageId } = req.params;
 
   try {
-    if (!messageId || !/^[0-9a-fA-F-]{36}$/.test(messageId)) {
-      return res.status(400).json({ error: 'Invalid message ID' });
-    }
+    // Confirm the message exists
+    const { rows: messageRows } = await query(
+      'SELECT id FROM messages WHERE id = $1',
+      [messageId]
+    );
 
-    const { rows } = await query('SELECT id FROM messages WHERE id = $1', [messageId]);
-    if (!rows.length) {
+    if (!messageRows.length) {
       return res.status(404).json({ error: 'Message not found for reaction init' });
     }
 
+    // Check if a reaction already exists to prevent duplicates
+    const { rows: existingReactions } = await query(
+      'SELECT id FROM reactions WHERE messageId = $1',
+      [messageId]
+    );
+
+    if (existingReactions.length > 0) {
+      return res.status(200).json({ reactionId: existingReactions[0].id });
+    }
+
+    // Create new reaction
     const { rows: inserted } = await query(
       `INSERT INTO reactions (messageId, createdAt, updatedAt)
        VALUES ($1, NOW(), NOW())
@@ -367,8 +379,15 @@ export const initReaction = async (req: Request, res: Response) => {
     );
 
     return res.status(201).json({ reactionId: inserted[0].id });
-  } catch (error) {
-    console.error('Error initializing reaction:', error);
+
+  } catch (error: any) {
+    console.error('❌ Error initializing reaction:', {
+      message: error.message,
+      stack: error.stack,
+      detail: error.detail,
+      code: error.code
+    });
+
     return res.status(500).json({ error: 'Failed to initialize reaction' });
   }
 };
