@@ -91,6 +91,54 @@ export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'ima
   }
 };
 
+export const initReaction = async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+
+  try {
+    // Ensure the message exists
+    const { rows } = await query('SELECT id FROM messages WHERE id = $1', [messageId]);
+    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+
+    const { rows: inserted } = await query(
+      `INSERT INTO reactions (messageId, createdAt, updatedAt)
+       VALUES ($1, NOW(), NOW())
+       RETURNING id`,
+      [messageId]
+    );
+
+    res.status(201).json({ reactionId: inserted[0].id });
+  } catch (error) {
+    console.error('Error initializing reaction:', error);
+    res.status(500).json({ error: 'Failed to initialize reaction' });
+  }
+};
+
+export const uploadReactionVideo = async (req: Request, res: Response) => {
+  const { reactionId } = req.params;
+  if (!req.file) return res.status(400).json({ error: 'No video file provided' });
+
+  try {
+    const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
+    const thumbnailUrl = videoUrl;
+    const duration = Math.floor(Math.random() * 30) + 5;
+
+    await query(
+      `UPDATE reactions
+       SET videoUrl = $1, thumbnailUrl = $2, duration = $3, updatedAt = NOW()
+       WHERE id = $4`,
+      [videoUrl, thumbnailUrl, duration, reactionId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Video uploaded successfully',
+      videoUrl,
+    });
+  } catch (error) {
+    console.error('Error uploading reaction video:', error);
+    return res.status(500).json({ error: 'Failed to upload reaction video' });
+  }
+};
 
 router.post('/messages/send', requireAuth, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
