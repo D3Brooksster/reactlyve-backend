@@ -350,9 +350,14 @@ export const initReaction = async (req: Request, res: Response) => {
   const { messageId } = req.params;
 
   try {
-    // Ensure the message exists
+    if (!messageId || !/^[0-9a-fA-F-]{36}$/.test(messageId)) {
+      return res.status(400).json({ error: 'Invalid message ID' });
+    }
+
     const { rows } = await query('SELECT id FROM messages WHERE id = $1', [messageId]);
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!rows.length) {
+      return res.status(404).json({ error: 'Message not found for reaction init' });
+    }
 
     const { rows: inserted } = await query(
       `INSERT INTO reactions (messageId, createdAt, updatedAt)
@@ -361,10 +366,10 @@ export const initReaction = async (req: Request, res: Response) => {
       [messageId]
     );
 
-    res.status(201).json({ reactionId: inserted[0].id });
+    return res.status(201).json({ reactionId: inserted[0].id });
   } catch (error) {
     console.error('Error initializing reaction:', error);
-    res.status(500).json({ error: 'Failed to initialize reaction' });
+    return res.status(500).json({ error: 'Failed to initialize reaction' });
   }
 };
 
