@@ -219,13 +219,9 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'Invalid message ID format' });
     }
 
-    // Get message with optional reaction info
+    // 1. Fetch the message
     const messageResult = await query(
-      `SELECT m.*, r.id as reactionId, r.videoUrl, r.thumbnailUrl, r.duration, 
-              r.createdAt as reactionCreatedAt, r.updatedAt as reactionUpdatedAt
-       FROM messages m
-       LEFT JOIN reactions r ON m.id = r.messageId
-       WHERE m.id = $1`,
+      'SELECT * FROM messages WHERE id = $1',
       [id]
     );
 
@@ -235,22 +231,37 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
 
     const message = messageResult.rows[0];
 
-    // Get replies
-    const repliesResult = await query(
-      `SELECT id, text, createdAt FROM replies WHERE messageId = $1 ORDER BY createdAt ASC`,
+    // 2. Fetch reactions
+    const reactionsResult = await query(
+      `SELECT * FROM reactions WHERE messageId = $1 ORDER BY createdAt ASC`,
       [id]
+    );
+
+    const reactionsWithReplies = await Promise.all(
+      reactionsResult.rows.map(async (reaction) => {
+        const repliesResult = await query(
+          `SELECT id, text, createdAt FROM replies WHERE reactionId = $1 ORDER BY createdAt ASC`,
+          [reaction.id]
+        );
+
+        return {
+          ...reaction,
+          createdAt: reaction.createdat,
+          updatedAt: reaction.updatedat,
+          replies: repliesResult.rows.map(reply => ({
+            ...reply,
+            createdAt: reply.createdat
+          }))
+        };
+      })
     );
 
     return res.status(200).json({
       ...message,
-      createdAt: message.createdat ? new Date(message.createdat).toISOString() : null,
-      updatedAt: message.updatedat ? new Date(message.updatedat).toISOString() : null,
-      replies: repliesResult.rows.map(reply => ({
-        ...reply,
-        createdAt: reply.createdat ? new Date(reply.createdat).toISOString() : null
-      }))
+      createdAt: message.createdat,
+      updatedAt: message.updatedat,
+      reactions: reactionsWithReplies
     });
-
 
   } catch (error) {
     console.error('Error getting message by ID:', error);
@@ -427,50 +438,39 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
 
 export const recordTextReply = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id: reactionId } = req.params;
     const { text } = req.body;
 
-    // validate
+    // Validate input
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Reply text is required' });
     }
     if (text.length > 500) {
-      return res
-        .status(400)
-        .json({ error: 'Reply text cannot exceed 500 characters' });
-    }
-    console.log('Incoming reply text:', text);
-    console.log('Replying to message ID:', id);
-      
-    // make sure message exists
-    const { rows } = await query(
-      'SELECT id FROM messages WHERE id = $1',
-      [id]
-    );
-    console.log('Message fetch result:', rows);
-      
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
+      return res.status(400).json({ error: 'Reply text cannot exceed 500 characters' });
     }
 
-    // update that row's isReply column with the reply text
+    // Ensure reaction exists
+    const { rows } = await query('SELECT id FROM reactions WHERE id = $1', [reactionId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Reaction not found' });
+    }
+
+    // Insert reply linked to the reaction
     await query(
-      `INSERT INTO replies (messageId, text, createdAt, updatedAt)
+      `INSERT INTO replies (reactionId, text, createdAt, updatedAt)
        VALUES ($1, $2, NOW(), NOW())`,
-      [id, text.trim()]
+      [reactionId, text.trim()]
     );
 
     return res.status(200).json({
       success: true,
-      message: 'Reply saved to replies table',
+      message: 'Reply saved to reaction',
     });
   } catch (error) {
     console.error('Error recording reply:', error);
     return res.status(500).json({ error: 'Failed to record reply' });
   }
 };
-
-
 
 export const skipReaction = async (req: Request, res: Response) => {
     try {
