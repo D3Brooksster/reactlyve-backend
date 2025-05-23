@@ -43,7 +43,7 @@ const upload = multer({
 });
 
 // === Cloudinary upload utilities ===
-export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
+export const uploadVideoToCloudinary = (buffer: Buffer): Promise<{ secure_url: string; duration: number }> => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -63,7 +63,16 @@ export const uploadVideoToCloudinary = (buffer: Buffer): Promise<string> => {
           console.error('Cloudinary error:', error);
           return reject(error);
         }
-        resolve(result?.secure_url || '');
+        
+        const secure_url = result?.secure_url || '';
+        let duration = 0;
+        if (result && typeof result.duration === 'number') {
+          duration = Math.round(result.duration);
+        } else if (result && result.video && typeof result.video.duration === 'number') {
+          duration = Math.round(result.video.duration);
+        }
+        
+        resolve({ secure_url, duration });
       }
     );
 

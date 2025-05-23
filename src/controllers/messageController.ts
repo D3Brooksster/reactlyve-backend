@@ -11,6 +11,7 @@ import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/mess
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
+    email?: string; // Added email to user object
   };
 }
 
@@ -53,6 +54,12 @@ const generateShareableLink = (): string => {
 export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
   upload(req, res, async (err) => {
     if (err) return res.status(err instanceof multer.MulterError ? 400 : 500).json({ error: err.message });
+
+    // Authorization check
+    const allowedEmails = ['danobrooks@gmail.com', 'dan@normal.ninja'];
+    if (req.user && req.user.email && !allowedEmails.includes(req.user.email)) {
+      return res.status(403).json({ error: 'You are not authorized to send messages.' });
+    }
 
     try {
       const { content, passcode } = req.body;
@@ -166,6 +173,11 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
 
     const message = messageRows[0];
 
+    // Mark message as viewed asynchronously
+    query('UPDATE messages SET viewed = true WHERE id = $1', [message.id]).catch(err => {
+      console.error('Failed to mark message as viewed:', err);
+    });
+
     const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageId = $1 ORDER BY createdAt ASC', [id]);
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
@@ -240,6 +252,11 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Invalid passcode', verified: false });
     }
 
+    // Mark message as viewed asynchronously
+    query('UPDATE messages SET viewed = true WHERE id = $1', [message.id]).catch(err => {
+      console.error('Failed to mark message as viewed after passcode verification:', err);
+    });
+
     return res.status(200).json({
       verified: true,
       message: {
@@ -261,21 +278,34 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
 export const recordReaction = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const { name } = req.body; // Added name
     if (!req.file) return res.status(400).json({ error: 'No reaction video provided' });
 
     const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2', [id, `%${id}`]);
     if (!rows.length) return res.status(404).json({ error: 'Message not found' });
 
     const messageId = rows[0].id;
-    const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-    const thumbnailUrl = videoUrl;
-    const duration = Math.floor(Math.random() * 30) + 5;
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
-    const { rows: inserted } = await query(
-      `INSERT INTO reactions (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt)
-       VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id`,
-      [messageId, videoUrl, thumbnailUrl, duration]
-    );
+    const queryText = `
+      INSERT INTO reactions (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt${name ? ', name' : ''})
+      VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}) RETURNING id`;
+    
+    const queryParams = [messageId, videoUrl, thumbnailUrl, duration];
+    if (name) {
+      queryParams.push(name);
+    }
+
+    const { rows: inserted } = await query(queryText, queryParams);
+
+    if (inserted.length > 0 && inserted[0].id) {
+      // Update isreply status of the parent message
+      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+        console.error('Failed to update isreply for message after reaction:', err);
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -301,6 +331,15 @@ export const recordTextReply = async (req: Request, res: Response) => {
     if (!rows.length) return res.status(404).json({ error: 'Reaction not found' });
 
     await query(`INSERT INTO replies (reactionId, text, createdAt, updatedAt) VALUES ($1, $2, NOW(), NOW())`, [reactionId, text.trim()]);
+
+    // Update isreply status of the parent message
+    const reactionResult = await query('SELECT messageId FROM reactions WHERE id = $1', [reactionId]);
+    if (reactionResult.rows.length > 0) {
+      const messageId = reactionResult.rows[0].messageid;
+      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+        console.error('Failed to update isreply for message after text reply:', err);
+      });
+    }
 
     return res.status(200).json({ success: true, message: 'Reply saved to reaction' });
 
@@ -348,7 +387,7 @@ export const deleteMessageAndReaction = async (req: Request, res: Response) => {
 
 export const initReaction = async (req: Request, res: Response) => {
   const { messageId } = req.params;
-  const { sessionId } = req.body;
+  const { sessionId, name } = req.body; // Added name
 
   console.log("Received sessionId:", sessionId);
   
@@ -375,15 +414,20 @@ export const initReaction = async (req: Request, res: Response) => {
     }
 
     // Create new reaction
-    console.log("About to insert new reaction with values:", { messageId, sessionId });
+    console.log("About to insert new reaction with values:", { messageId, sessionId, name }); // Added name
 
-    const insertQuery = `
-      INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt)
-      VALUES ($1, $2, NOW(), NOW()) RETURNING id`;
+    let insertQuery = `
+      INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt${name ? ', name' : ''})
+      VALUES ($1, $2, NOW(), NOW()${name ? ', $3' : ''}) RETURNING id`;
+    
+    const queryParams = [messageId, sessionId];
+    if (name) {
+      queryParams.push(name);
+    }
 
     console.log("Insert query:", insertQuery);
 
-    const { rows: inserted } = await query(insertQuery, [messageId, sessionId]);
+    const { rows: inserted } = await query(insertQuery, queryParams);
 
     console.log("Reaction inserted with ID:", inserted[0]?.id);
 
@@ -405,9 +449,9 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'No video file provided' });
 
   try {
-    const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-    const thumbnailUrl = videoUrl;
-    const duration = Math.floor(Math.random() * 30) + 5;
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     await query(
       `UPDATE reactions
@@ -416,10 +460,19 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
       [videoUrl, thumbnailUrl, duration, reactionId]
     );
 
+    // Update isreply status of the parent message
+    const reactionResult = await query('SELECT messageId FROM reactions WHERE id = $1', [reactionId]);
+    if (reactionResult.rows.length > 0) {
+      const messageId = reactionResult.rows[0].messageid;
+      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+        console.error('Failed to update isreply for message after video upload:', err);
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
-      videoUrl,
+      videoUrl: videoUrl, // ensure videoUrl is passed in response
     });
   } catch (error) {
     console.error('Error uploading reaction video:', error);
