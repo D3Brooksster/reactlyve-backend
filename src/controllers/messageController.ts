@@ -285,9 +285,9 @@ export const recordReaction = async (req: Request, res: Response) => {
     if (!rows.length) return res.status(404).json({ error: 'Message not found' });
 
     const messageId = rows[0].id;
-    const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-    const thumbnailUrl = videoUrl;
-    const duration = 15; // Changed duration
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     const queryText = `
       INSERT INTO reactions (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt${name ? ', name' : ''})
@@ -449,9 +449,9 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'No video file provided' });
 
   try {
-    const videoUrl = await uploadVideoToCloudinary(req.file.buffer);
-    const thumbnailUrl = videoUrl;
-    const duration = 15; // Changed duration
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     await query(
       `UPDATE reactions
@@ -472,7 +472,7 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
-      videoUrl,
+      videoUrl: videoUrl, // ensure videoUrl is passed in response
     });
   } catch (error) {
     console.error('Error uploading reaction video:', error);
