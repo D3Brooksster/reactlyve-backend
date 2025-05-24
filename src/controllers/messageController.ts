@@ -142,7 +142,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
     
         if (messageIds.length > 0) {
           const { rows: reactions } = await query(
-            `SELECT id, "messageId", name AS "replierName", "createdAt"
+            `SELECT id, messageId, name, createdAt
              FROM reactions
              WHERE "messageId" = ANY($1::uuid[])`,
             [messageIds]
@@ -154,7 +154,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
             if (!map[msgId]) map[msgId] = [];
             map[msgId].push({
               id: reaction.id,
-              replierName: reaction.repliername,
+              name: reaction.name,
               createdAt: new Date(reaction.createdat).toISOString()
             });
             return map;
