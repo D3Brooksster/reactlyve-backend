@@ -102,65 +102,100 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
 };
 
 export const getAllMessages = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const senderId = req.user?.id;
-    if (!senderId) return res.status(401).json({ error: 'User not authenticated' });
-
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
-
-    const countResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1', [senderId]);
-    const totalMessages = parseInt(countResult.rows[0].count);
-
-    const viewedResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true', [senderId]);
-    const viewedMessages = parseInt(viewedResult.rows[0].count);
-
-    const reactionResult = await query(
-      `SELECT COUNT(*) FROM reactions r
-       INNER JOIN messages m ON r.messageId = m.id
-       WHERE m.senderId = $1`,
-      [senderId]
-    );
-    const totalReactions = parseInt(reactionResult.rows[0].count);
-
-    const { rows: messages } = await query(
-      `SELECT id, content, imageUrl, shareableLink, passcode, viewed, createdAt, updatedAt
-       FROM messages 
-       WHERE senderId = $1 
-       ORDER BY createdAt DESC 
-       LIMIT $2 OFFSET $3`,
-      [senderId, limit, offset]
-    );
-
-    const formattedMessages = messages.map(msg => ({
-      ...msg,
-      createdAt: new Date(msg.createdat).toISOString(),
-      updatedAt: new Date(msg.updatedat).toISOString()
-    }));
-
-    return res.status(200).json({
-      messages: formattedMessages,
-      pagination: {
-        totalMessages,
-        totalPages: Math.ceil(totalMessages / limit),
-        currentPage: page,
-        limit
-      },
-      stats: {
-        totalMessages,
-        viewedMessages,
-        viewRate: ((viewedMessages / totalMessages) * 100).toFixed(2) + '%',
-        totalReactions,
-        reactionRate: ((totalReactions / totalMessages) * 100).toFixed(2) + '%'
+      try {
+        const senderId = req.user?.id;
+        if (!senderId) return res.status(401).json({ error: 'User not authenticated' });
+    
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const offset = (page - 1) * limit;
+    
+        // Fetch counts
+        const countResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1', [senderId]);
+        const totalMessages = parseInt(countResult.rows[0]?.count || '0', 10);
+    
+        const viewedResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true', [senderId]);
+        const viewedMessages = parseInt(viewedResult.rows[0]?.count || '0', 10);
+    
+        const reactionResult = await query(
+          `SELECT COUNT(*) FROM reactions r
+           INNER JOIN messages m ON r.messageId = m.id
+           WHERE m.senderId = $1`,
+          [senderId]
+        );
+        const totalReactions = parseInt(reactionResult.rows[0]?.count || '0', 10);
+    
+        // Fetch messages
+        const { rows: messages } = await query(
+          `SELECT id, content, imageUrl, shareableLink, passcode, viewed, createdAt, updatedAt
+           FROM messages 
+           WHERE senderId = $1 
+           ORDER BY createdAt DESC 
+           LIMIT $2 OFFSET $3`,
+          [senderId, limit, offset]
+        );
+    
+        const messageIds = messages.map(msg => msg.id);
+    
+        // Fetch reactions for those messages
+        let reactionMap: Record<string, any[]> = {};
+    
+        if (messageIds.length > 0) {
+          const { rows: reactions } = await query(
+            `SELECT id, messageId, replierName, createdAt
+             FROM reactions
+             WHERE messageId = ANY($1::uuid[])`,
+            [messageIds]
+          );
+    
+          // Group reactions by messageId
+          reactionMap = reactions.reduce((map, reaction) => {
+            const msgId = reaction.messageid;
+            if (!map[msgId]) map[msgId] = [];
+            map[msgId].push({
+              id: reaction.id,
+              replierName: reaction.repliername,
+              createdAt: new Date(reaction.createdat).toISOString()
+            });
+            return map;
+          }, {} as Record<string, any[]>);
+        }
+    
+        // Format messages with attached reactions
+        const formattedMessages = messages.map(msg => ({
+          ...msg,
+          reactions: reactionMap[msg.id] || [],
+          createdAt: new Date(msg.createdat).toISOString(),
+          updatedAt: new Date(msg.updatedat).toISOString()
+        }));
+    
+        // Return final response
+        return res.status(200).json({
+          messages: formattedMessages,
+          pagination: {
+            totalMessages,
+            totalPages: Math.ceil(totalMessages / limit),
+            currentPage: page,
+            limit
+          },
+          stats: {
+            totalMessages,
+            viewedMessages,
+            viewRate: totalMessages > 0
+              ? ((viewedMessages / totalMessages) * 100).toFixed(2) + '%'
+              : '0%',
+            totalReactions,
+            reactionRate: totalMessages > 0
+              ? ((totalReactions / totalMessages) * 100).toFixed(2) + '%'
+              : '0%'
+          }
+        });
+    
+      } catch (error) {
+        console.error('Error getting all messages:', error);
+        return res.status(500).json({ error: 'Failed to get all messages' });
       }
-    });
-
-  } catch (error) {
-    console.error('Error getting all messages:', error);
-    return res.status(500).json({ error: 'Failed to get all messages' });
-  }
-};
+    };
 
 export const getMessageById = async (req: AuthenticatedRequest, res: Response) => {
   try {
