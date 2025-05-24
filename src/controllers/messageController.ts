@@ -144,7 +144,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
           const { rows: reactions } = await query(
             `SELECT id, messageId, name, createdAt
              FROM reactions
-             WHERE "messageId" = ANY($1::uuid[])`,
+             WHERE messageId = ANY($1::uuid[])`,
             [messageIds]
           );
     
