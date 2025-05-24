@@ -142,9 +142,9 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
     
         if (messageIds.length > 0) {
           const { rows: reactions } = await query(
-            `SELECT id, messageId, replierName, createdAt
+            `SELECT id, "messageId", name AS "replierName", "createdAt"
              FROM reactions
-             WHERE messageId = ANY($1::uuid[])`,
+             WHERE "messageId" = ANY($1::uuid[])`,
             [messageIds]
           );
     
