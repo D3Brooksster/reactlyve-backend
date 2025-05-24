@@ -400,6 +400,32 @@ export const skipReaction = async (req: Request, res: Response) => {
   }
 };
 
+export const getReactionById = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+  
+      const { rows } = await query(
+        `SELECT id, messageId, videoUrl, thumbnailUrl, duration, name, createdAt
+         FROM reactions
+         WHERE id = $1`,
+        [id]
+      );
+  
+      if (!rows.length) {
+        return res.status(404).json({ error: 'Reaction not found' });
+      }
+  
+      const reaction = rows[0];
+      return res.status(200).json({
+        ...reaction,
+        createdAt: new Date(reaction.createdat).toISOString()
+      });
+    } catch (error) {
+      console.error('Error fetching reaction by ID:', error);
+      return res.status(500).json({ error: 'Failed to get reaction' });
+    }
+  };
+
 export const deleteMessageAndReaction = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
