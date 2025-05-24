@@ -13,7 +13,8 @@ import {
   recordTextReply,
   initReaction,         
   uploadReactionVideo,
-  getReactionsByMessageId
+  getReactionsByMessageId,
+  getReactionById
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
@@ -120,5 +121,6 @@ router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
+router.get('/reactions/:id', getReactionById);
 
 export default router;
