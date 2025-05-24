@@ -50,6 +50,103 @@ const generateShareableLink = (): string => {
   return `${baseUrl}/m/${uniqueId}`;
 };
 
+const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const url = new URL(cloudinaryUrl);
+      const pathname = url.pathname; // e.g., /<cloud_name>/<resource_type>/upload/v<version>/<folder>/<public_id_with_ext>
+
+      const pathSegments = pathname.split('/').filter(segment => segment); // remove empty segments
+
+      // Minimum structure: /<cloud_name>/<resource_type>/<delivery_type>/<public_id_part>
+      // Example: /mycloud/image/upload/file.jpg  (length 4)
+      if (pathSegments.length < 4) { 
+        return reject(new Error('Invalid Cloudinary URL: Path too short. Needs at least cloud_name, resource_type, delivery_type, and public_id part.'));
+      }
+
+      // pathSegments[0] = <cloud_name> (e.g. "mycloud")
+      // pathSegments[1] = <resource_type> (e.g. "image", "video")
+      // pathSegments[2] = <delivery_type> (e.g. "upload", "fetch")
+      // pathSegments[3:] = parts that make up the public_id, potentially including a version string.
+
+      const resource_type = pathSegments[1];
+      if (!['image', 'video', 'raw'].includes(resource_type)) {
+        return reject(new Error(`Invalid resource_type: '${resource_type}'. Must be 'image', 'video', or 'raw'.`));
+      }
+
+      // For deletion, delivery_type is usually "upload". We could validate pathSegments[2] if needed.
+      // const delivery_type = pathSegments[2];
+      // if (delivery_type !== 'upload') {
+      //   return reject(new Error(`Invalid delivery_type: '${delivery_type}'. Expected 'upload'.`));
+      // }
+
+      const startIndexAfterUpload = 3; // Public ID parts start after cloud_name/resource_type/delivery_type
+      const potentialPublicIdParts = pathSegments.slice(startIndexAfterUpload);
+
+      if (potentialPublicIdParts.length === 0) {
+        return reject(new Error('No segments found for public_id after cloud_name/resource_type/delivery_type.'));
+      }
+
+      // Filter out the version segment (e.g., "v1234567890") from these parts.
+      // The version segment can be anywhere within these parts.
+      let versionSegmentFound = false;
+      const publicIdPathParts = potentialPublicIdParts.filter(segment => {
+        if (segment.match(/^v\d+$/)) {
+          versionSegmentFound = true;
+          return false; // Exclude version segment
+        }
+        return true; // Keep other segments
+      });
+
+      // Note: Cloudinary URLs typically always have a version, even if it's v1.
+      // If no version string is explicitly found, all parts are considered part of the public_id.
+      // This behavior is implicitly handled by the filter above. If `versionSegmentFound` is useful for logging, it can be kept.
+
+      if (publicIdPathParts.length === 0) {
+        return reject(new Error('Public ID path parts array is empty after filtering version segment (if any).'));
+      }
+
+      const publicIdWithExtension = publicIdPathParts.join('/');
+      
+      // Remove the file extension from the last part of publicIdWithExtension
+      const lastDotIndex = publicIdWithExtension.lastIndexOf('.');
+      // Ensure dot is not the first character and an extension exists.
+      const public_id = (lastDotIndex > 0 && lastDotIndex < publicIdWithExtension.length -1) 
+                        ? publicIdWithExtension.substring(0, lastDotIndex) 
+                        : publicIdWithExtension;
+
+      if (!public_id) { // Should not happen if publicIdPathParts was not empty.
+        return reject(new Error('Public ID became empty after attempting to remove extension.'));
+      }
+      
+      console.log(`Attempting to delete from Cloudinary: public_id='${public_id}', resource_type='${resource_type}'`);
+
+      cloudinary.uploader.destroy(public_id, { resource_type: resource_type }, (error, result) => {
+        if (error) {
+          console.error('Error deleting from Cloudinary:', error);
+          return reject(error);
+        }
+        if (result && result.result !== 'ok' && result.result !== 'not found') {
+            console.warn('Cloudinary deletion warning:', result);
+            // We can choose to reject or resolve based on the 'result.result'
+            // For now, let's consider 'not found' as a successful deletion for idempotency.
+            // Other non-'ok' results could be actual issues.
+             if (result.result === 'not found') {
+                console.log(`Asset with public_id '${public_id}' not found on Cloudinary. Considered as deleted.`);
+                return resolve(result);
+            }
+            return reject(new Error(`Cloudinary deletion failed: ${result.result}`));
+        }
+        console.log('Successfully deleted from Cloudinary or asset was not found:', result);
+        resolve(result);
+      });
+    } catch (error) {
+      console.error('Failed to parse Cloudinary URL or other unexpected error:', error);
+      reject(error);
+    }
+  });
+};
+
 // === Controllers ===
 export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
   upload(req, res, async (err) => {
@@ -242,6 +339,123 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
+export const deleteAllReactionsForMessage = async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+
+  // Validate messageId as UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(messageId)) {
+    return res.status(400).json({ error: 'Invalid Message ID format.' });
+  }
+
+  try {
+    // Verify Message Exists
+    const messageExistsResult = await query('SELECT id FROM messages WHERE id = $1', [messageId]);
+    if (messageExistsResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    // Fetch all reactions for the message to get their IDs and videoUrls
+    const reactionsResult = await query('SELECT id, videoUrl FROM reactions WHERE messageId = $1', [messageId]);
+    const reactionsToDelete = reactionsResult.rows; // Array of { id: reactionId, videourl: videoUrl }
+
+    if (reactionsToDelete.length === 0) {
+      return res.status(200).json({ success: true, message: 'No reactions found for this message. Nothing to delete.' });
+    }
+
+    // Collect all reaction IDs
+    const reactionIds = reactionsToDelete.map(r => r.id);
+
+    // Delete associated replies for all fetched reactions
+    // Using ANY($1::uuid[]) for potentially better performance if many reaction IDs
+    if (reactionIds.length > 0) {
+      await query('DELETE FROM replies WHERE reactionId = ANY($1::uuid[])', [reactionIds]);
+    }
+    
+    // Delete all reactions associated with the messageId
+    await query('DELETE FROM reactions WHERE messageId = $1', [messageId]);
+
+    // Attempt to delete associated videos from Cloudinary
+    let cloudinaryDeletionsFailed = false;
+    for (const reaction of reactionsToDelete) {
+      if (reaction.videourl) {
+        try {
+          console.log(`Attempting to delete reaction video from Cloudinary: ${reaction.videourl}`);
+          await deleteFromCloudinary(reaction.videourl);
+          console.log(`Successfully deleted reaction video: ${reaction.videourl}`);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
+          // Log error, but don't fail the entire operation
+        }
+      }
+    }
+
+    let responseMessage = 'All reactions and their replies for the message have been deleted successfully.';
+    if (cloudinaryDeletionsFailed) {
+      responseMessage += ' Some Cloudinary deletions may have failed, check logs.';
+    }
+
+    return res.status(200).json({ success: true, message: responseMessage });
+
+  } catch (dbError) {
+    console.error(`Error during database operation for message ${messageId} while deleting all reactions:`, dbError);
+    return res.status(500).json({ error: 'Failed to delete all reactions for the message due to a server error.' });
+  }
+};
+
+export const deleteReactionById = async (req: Request, res: Response) => {
+  const { reactionId } = req.params;
+
+  // Validate reactionId as UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(reactionId)) {
+    return res.status(400).json({ error: 'Invalid Reaction ID format.' });
+  }
+
+  try {
+    // Fetch Reaction to get videoUrl
+    const reactionQueryResult = await query('SELECT videoUrl FROM reactions WHERE id = $1', [reactionId]);
+
+    if (reactionQueryResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Reaction not found.' });
+    }
+    const reactionVideoUrl = reactionQueryResult.rows[0].videourl;
+
+    // Database Deletion (Order is Important)
+    // 1. Delete associated replies
+    await query('DELETE FROM replies WHERE reactionId = $1', [reactionId]);
+
+    // 2. Delete the reaction itself
+    await query('DELETE FROM reactions WHERE id = $1', [reactionId]);
+
+    // Cloudinary Deletion
+    let cloudinaryDeletionFailed = false;
+    if (reactionVideoUrl) {
+      try {
+        console.log(`Attempting to delete reaction video from Cloudinary: ${reactionVideoUrl}`);
+        await deleteFromCloudinary(reactionVideoUrl);
+        console.log(`Successfully deleted reaction video: ${reactionVideoUrl}`);
+      } catch (cloudinaryError) {
+        cloudinaryDeletionFailed = true;
+        console.error(`Failed to delete reaction video ${reactionVideoUrl} from Cloudinary:`, cloudinaryError);
+        // Log error, but don't fail the entire operation
+      }
+    }
+
+    let responseMessage = 'Reaction and associated replies deleted successfully.';
+    if (cloudinaryDeletionFailed) {
+      responseMessage += ' Cloudinary deletion may have failed, check logs.';
+    }
+
+    return res.status(200).json({ success: true, message: responseMessage });
+
+  } catch (dbError) {
+    console.error(`Error during database operation for reaction ${reactionId}:`, dbError);
+    return res.status(500).json({ error: 'Failed to delete reaction due to a server error.' });
+  }
+};
+
 export const getMessageByShareableLink = async (req: Request, res: Response) => {
   try {
     const { linkId } = req.params;
@@ -427,22 +641,83 @@ export const getReactionById = async (req: Request, res: Response) => {
   };
 
 export const deleteMessageAndReaction = async (req: Request, res: Response) => {
+  const { id: paramId } = req.params; // paramId can be message UUID or shareableLink part
+
   try {
-    const { id } = req.params;
-    const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2', [id, `%${id}`]);
+    // 1. Fetch Message and its imageUrl
+    // Try finding by direct ID first, then by shareable link part.
+    let messageQueryResult = await query('SELECT id, imageUrl FROM messages WHERE id = $1', [paramId]);
+    if (messageQueryResult.rows.length === 0) {
+      // Try finding by shareable link if not a direct UUID match (or if paramId wasn't a UUID)
+      // Constructing the like pattern for shareableLink
+      const shareableLinkPattern = `%/${paramId}`;
+      messageQueryResult = await query('SELECT id, imageUrl FROM messages WHERE shareableLink LIKE $1', [shareableLinkPattern]);
+    }
 
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (messageQueryResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
 
-    const messageId = rows[0].id;
+    const message = messageQueryResult.rows[0];
+    const messageId = message.id; // Actual UUID of the message
+    const messageImageUrl = message.imageurl;
 
+    // 2. Fetch Reactions and their videoUrls
+    const reactionsQueryResult = await query('SELECT id, videoUrl FROM reactions WHERE messageId = $1', [messageId]);
+    const reactions = reactionsQueryResult.rows; // Array of { id: reactionId, videourl: videoUrl }
+
+    // 3. Database Deletion (Order is Important)
+    // For each reaction found, delete its associated replies
+    for (const reaction of reactions) {
+      if (reaction.id) {
+        await query('DELETE FROM replies WHERE reactionId = $1', [reaction.id]);
+      }
+    }
+
+    // Delete all reactions associated with the messageId
     await query('DELETE FROM reactions WHERE messageId = $1', [messageId]);
+
+    // Delete the message itself
     await query('DELETE FROM messages WHERE id = $1', [messageId]);
 
-    return res.status(200).json({ success: true, message: 'Message and reactions deleted' });
+    // 4. Cloudinary Deletion (after successful DB deletions)
+    let cloudinaryDeletionsFailed = false;
+    if (messageImageUrl) {
+      try {
+        console.log(`Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
+        await deleteFromCloudinary(messageImageUrl);
+        console.log(`Successfully deleted message image: ${messageImageUrl}`);
+      } catch (cloudinaryError) {
+        cloudinaryDeletionsFailed = true;
+        console.error(`Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
+        // Log error, but don't fail the entire operation
+      }
+    }
 
-  } catch (error) {
-    console.error('Error deleting message and reaction:', error);
-    return res.status(500).json({ error: 'Failed to delete' });
+    for (const reaction of reactions) {
+      if (reaction.videourl) {
+        try {
+          console.log(`Attempting to delete reaction video from Cloudinary: ${reaction.videourl}`);
+          await deleteFromCloudinary(reaction.videourl);
+          console.log(`Successfully deleted reaction video: ${reaction.videourl}`);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
+          // Log error, but don't fail the entire operation
+        }
+      }
+    }
+    
+    let responseMessage = 'Message and associated data deleted successfully.';
+    if (cloudinaryDeletionsFailed) {
+        responseMessage += ' Some Cloudinary deletions may have failed, check logs.';
+    }
+
+    return res.status(200).json({ success: true, message: responseMessage });
+
+  } catch (dbError) {
+    console.error('Error during database operation in deleteMessageAndReaction:', dbError);
+    return res.status(500).json({ error: 'Failed to delete message and associated data due to a server error.' });
   }
 };
 
