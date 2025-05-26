@@ -158,24 +158,29 @@ passport.use(new GoogleStrategy(
       const picture   = profile.photos?.[0]?.value!;
 
       // 1) Try to find existing user
-      const { rows } = await query(
-        `SELECT * FROM users WHERE google_id = $1`, 
+      const { rows: existingUsers } = await query(
+        `SELECT * FROM users WHERE google_id = $1`,
         [google_id]
       );
 
-      if (rows.length > 0) {
-        return done(null, rows[0] as User);
+      if (existingUsers.length > 0) {
+        // Existing user found, update last_login
+        const { rows: updatedUsers } = await query(
+          `UPDATE users SET last_login = NOW() WHERE google_id = $1 RETURNING *`,
+          [google_id]
+        );
+        return done(null, updatedUsers[0] as User);
       }
 
-      // 2) Insert new user (DB defaults handle id, timestamps)
-      const insert = await query(
-        `INSERT INTO users (google_id, email, name, picture)
-         VALUES ($1, $2, $3, $4)
+      // 2) Insert new user with role 'guest' and last_login
+      const newUserResult = await query(
+        `INSERT INTO users (google_id, email, name, picture, role, last_login)
+         VALUES ($1, $2, $3, $4, 'guest', NOW())
          RETURNING *`,
         [google_id, email, name, picture]
       );
 
-      return done(null, insert.rows[0] as User);
+      return done(null, newUserResult.rows[0] as User);
     } catch (err) {
       return done(err as Error, undefined);
     }
