@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
-import { User } from '../entity/User';
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
@@ -10,10 +10,12 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
       []
     );
-    return res.json(users);
+    res.json(users);
+    return;
   } catch (error) {
     console.error('Error fetching all users:', error);
-    return res.status(500).json({ error: 'Failed to fetch users.' });
+    res.status(500).json({ error: 'Failed to fetch users.' });
+    return;
   }
 };
 
@@ -22,16 +24,18 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
   const { role: newRole } = req.body;
 
   if (!['guest', 'user', 'admin'].includes(newRole)) {
-    return res.status(400).json({ error: 'Invalid role specified. Must be one of: guest, user, admin.' });
+    res.status(400).json({ error: 'Invalid role specified. Must be one of: guest, user, admin.' });
+    return;
   }
 
   // Prevent admin from changing their own role if they are the one making the request
   // This is a safety measure. Admins should not accidentally demote themselves.
   // Another admin would be needed to change their role.
   if (req.user) {
-    const adminPerformingAction = req.user as User;
+    const adminPerformingAction = req.user as AppUser; // Changed User to AppUser
     if (adminPerformingAction.id === userId && adminPerformingAction.role === 'admin' && newRole !== 'admin') {
-      return res.status(403).json({ error: 'Admins cannot change their own role to a non-admin role via this endpoint.' });
+      res.status(403).json({ error: 'Admins cannot change their own role to a non-admin role via this endpoint.' });
+      return;
     }
   }
 
@@ -43,12 +47,15 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     );
 
     if (rowCount === 0) {
-      return res.status(404).json({ error: 'User not found.' });
+      res.status(404).json({ error: 'User not found.' });
+      return;
     }
-    return res.json(updatedUsers[0]);
+    res.json(updatedUsers[0]);
+    return;
   } catch (error) {
     console.error(`Error updating role for user ${userId}:`, error);
-    return res.status(500).json({ error: 'Failed to update user role.' });
+    res.status(500).json({ error: 'Failed to update user role.' });
+    return;
   }
 };
 
@@ -56,14 +63,16 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
   const { userId } = req.params; // User ID to delete
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID parameter is missing.' });
+    res.status(400).json({ error: 'User ID parameter is missing.' });
+    return;
   }
 
   // Prevent admin from removing themselves using this endpoint
   if (req.user) {
-    const adminPerformingAction = req.user as User;
+    const adminPerformingAction = req.user as AppUser; // Changed User to AppUser
     if (adminPerformingAction.id === userId) {
-      return res.status(400).json({ error: 'Admin cannot remove themselves using this endpoint. Use profile deletion for your own account.' });
+      res.status(400).json({ error: 'Admin cannot remove themselves using this endpoint. Use profile deletion for your own account.' });
+      return;
     }
   }
 
@@ -115,16 +124,19 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       // Or the user was already deleted in a concurrent request.
       // If rowCount is 0 here, it means the user ID was not found.
       await query('ROLLBACK', []);
-      return res.status(404).json({ error: 'User not found, or already deleted.' });
+      res.status(404).json({ error: 'User not found, or already deleted.' });
+      return;
     }
     
     await query('COMMIT', []);
-    return res.status(200).json({ message: `User ${userId} and all their associated data have been deleted successfully.` });
+    res.status(200).json({ message: `User ${userId} and all their associated data have been deleted successfully.` });
+    return;
   } catch (error) {
     await query('ROLLBACK', []);
     console.error(`Error deleting user ${userId}:`, error);
     // Check for specific error types if needed, e.g., foreign key violation if something was missed
-    return res.status(500).json({ error: 'Failed to delete user and their associated data due to an internal error.' });
+    res.status(500).json({ error: 'Failed to delete user and their associated data due to an internal error.' });
+    return;
   }
 };
 

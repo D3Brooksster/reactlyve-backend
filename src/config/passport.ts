@@ -126,7 +126,7 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { query } from './database.config';
-import { User } from '../entity/User';
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 
 // Serialize (store user ID in session)
 passport.serializeUser<any, any>((user, done) => {
@@ -138,7 +138,7 @@ passport.serializeUser<any, any>((user, done) => {
 passport.deserializeUser(async (id: string, done) => {
   try {
     const { rows } = await query('SELECT * FROM users WHERE id = $1', [id]);
-    done(null, rows[0] as User);
+    done(null, rows[0] as AppUser); // Changed User to AppUser
   } catch (err) {
     done(err, null);
   }
@@ -169,7 +169,7 @@ passport.use(new GoogleStrategy(
           `UPDATE users SET last_login = NOW() WHERE google_id = $1 RETURNING *`,
           [google_id]
         );
-        return done(null, updatedUsers[0] as User);
+        return done(null, updatedUsers[0] as AppUser); // Changed User to AppUser
       }
 
       // 2) Insert new user with role 'guest' and last_login
@@ -180,7 +180,7 @@ passport.use(new GoogleStrategy(
         [google_id, email, name, picture]
       );
 
-      return done(null, newUserResult.rows[0] as User);
+      return done(null, newUserResult.rows[0] as AppUser); // Changed User to AppUser
     } catch (err) {
       return done(err as Error, undefined);
     }

@@ -1,15 +1,16 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
-import { User } from '../entity/User';
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 // import { deleteFromCloudinary } from './messageController'; // Not exported, so cannot be directly used
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
 export const getMyProfile = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
-  const user = req.user as User; // Explicitly assert the type
+  const user = req.user as AppUser; // Changed User to AppUser
 
   // Extract user details from req.user
   // Ensure all fields required by the client or for display are included
@@ -25,13 +26,15 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     created_at,
     blocked // Assuming 'blocked' status might also be relevant for a profile
   });
+  return;
 };
 
 export const deleteMyAccount = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) { // The req.user.id check is implicitly covered by this
-    return res.status(401).json({ error: 'Not authenticated or user ID missing' });
+    res.status(401).json({ error: 'Not authenticated or user ID missing' });
+    return;
   }
-  const user = req.user as User; // Explicitly assert the type
+  const user = req.user as AppUser; // Changed User to AppUser
   const userId = user.id; // Use asserted user
 
   try {
@@ -90,12 +93,14 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
     // Since passport.deserializeUser will fail for subsequent requests with this user's ID,
     // this server-side deletion is generally sufficient.
 
-    return res.status(200).json({ message: 'Account deleted successfully. All associated data has been removed.' });
+    res.status(200).json({ message: 'Account deleted successfully. All associated data has been removed.' });
+    return;
   } catch (error) {
     await query('ROLLBACK', []);
     console.error('Error deleting account:', error);
     // It's good to log the specific userId for which deletion failed, if possible and safe (no PII in logs).
-    return res.status(500).json({ error: 'Failed to delete account. An internal error occurred.' });
+    res.status(500).json({ error: 'Failed to delete account. An internal error occurred.' });
+    return;
   }
 };
 

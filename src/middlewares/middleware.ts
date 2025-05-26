@@ -1,13 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '../entity/User';
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 import { query } from '../config/database.config';
 // AuthenticatedRequest import removed
 
 declare global {
   namespace Express {
     interface Request {
-      user?: User;
+      user?: AppUser; // Changed User to AppUser
       token?: string;
     }
   }
@@ -24,7 +24,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     // Optionally fetch full user
     const { rows } = await query('SELECT * FROM users WHERE id = $1', [payload.id]);
     if (!rows.length) return res.status(401).json({ error: 'User not found' });
-    req.user = rows[0] as User;
+    req.user = rows[0] as AppUser; // Changed User to AppUser
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });

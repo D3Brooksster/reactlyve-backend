@@ -41,9 +41,9 @@
 
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '../entity/User';
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 
-export const generateToken = (user: User):string => {
+export const generateToken = (user: AppUser):string => { // Changed User to AppUser
     const secret = process.env.JWT_SECRET as string;
     const expiresIn = process.env.JWT_EXPIRES_IN as string;
 
@@ -57,11 +57,12 @@ export const generateToken = (user: User):string => {
 };
 
 export const googleCallback = (req: Request, res: Response) => {
-  const user = req.user as User;
+  const user = req.user as AppUser; // Changed User to AppUser
   const token = generateToken(user);
   // Redirect back to frontend with token
   const redirectUrl = `${process.env.FRONTEND_URL}/auth/success?token=${token}`;
-  return res.redirect(redirectUrl);
+  res.redirect(redirectUrl);
+  return; // Adjusted for void compatibility
 };
 
 export const getCurrentUser = (req: Request, res: Response) => {
@@ -70,13 +71,16 @@ export const getCurrentUser = (req: Request, res: Response) => {
     // If req.user is not present here, requireAuth did not call next() or there's a middleware setup issue.
     if (!req.user) { 
       // This case should ideally be handled by requireAuth, but as a safeguard.
-      return res.status(401).json({ error: 'Not authenticated, user not found on request.' });
+      res.status(401).json({ error: 'Not authenticated, user not found on request.' });
+      return;
     }
-    const user = req.user as User; // Explicitly assert the type
-    return res.json({ user: user }); // Use asserted user
+    const user = req.user as AppUser; // Changed User to AppUser
+    res.json({ user: user }); // Use asserted user
+    return;
   } catch (error) {
     // It's good practice to log the error and send a generic server error response.
     console.error("Error in getCurrentUser:", error);
-    return res.status(500).json({ error: 'Internal server error.' });
+    res.status(500).json({ error: 'Internal server error.' });
+    return;
   }
 };

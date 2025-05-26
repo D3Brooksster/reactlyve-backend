@@ -6,7 +6,7 @@ import { Readable } from 'stream';
 import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
-import { User } from '../entity/User'; // User import is kept
+import { AppUser } from '../entity/User'; // Changed User to AppUser
 import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -146,26 +146,34 @@ const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
 // === Controllers ===
 export const sendMessage = (req: Request, res: Response) => {
   upload(req, res, async (err) => {
-    if (err) return res.status(err instanceof multer.MulterError ? 400 : 500).json({ error: err.message });
+    if (err) {
+      res.status(err instanceof multer.MulterError ? 400 : 500).json({ error: err.message });
+      return;
+    }
 
     // Authorization check
     // requireAuth ensures req.user is present. If not, it would have already sent a 401.
     // So, we can safely assert req.user here if the logic proceeds past requireAuth.
     if (!req.user) {
         // This should ideally not be reached if requireAuth is effective.
-        return res.status(401).json({ error: 'User not authenticated for sendMessage authorization.' });
+        res.status(401).json({ error: 'User not authenticated for sendMessage authorization.' });
+        return;
     }
-    const user = req.user as User; // Explicitly assert the type
+    const user = req.user as AppUser; // Changed User to AppUser
 
     const allowedEmails = ['danobrooks@gmail.com', 'dan@normal.ninja'];
     if (user.email && !allowedEmails.includes(user.email)) { // Use asserted user
-      return res.status(403).json({ error: 'You are not authorized to send messages.' });
+      res.status(403).json({ error: 'You are not authorized to send messages.' });
+      return;
     }
 
     try {
       const { content, passcode } = req.body;
       const senderId = user.id; // Use asserted user
-      if (!content) return res.status(400).json({ error: 'Message content is required' });
+      if (!content) {
+        res.status(400).json({ error: 'Message content is required' });
+        return;
+      }
 
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
@@ -184,7 +192,7 @@ export const sendMessage = (req: Request, res: Response) => {
       );
 
       const message = rows[0];
-      return res.status(201).json({
+      res.status(201).json({
         id: message.id,
         senderId: message.senderid,
         content: message.content,
@@ -194,10 +202,12 @@ export const sendMessage = (req: Request, res: Response) => {
         createdAt: new Date(message.createdat).toISOString(),
         updatedAt: new Date(message.updatedat).toISOString()
       });
+      return;
 
     } catch (error) {
       console.error('Error sending message:', error);
-      return res.status(500).json({ error: 'Failed to send message' });
+      res.status(500).json({ error: 'Failed to send message' });
+      return;
     }
   });
 };
@@ -206,9 +216,10 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
       try {
         if (!req.user) {
             // This should ideally not be reached if requireAuth is effective.
-            return res.status(401).json({ error: 'User not authenticated for getAllMessages.' });
+            res.status(401).json({ error: 'User not authenticated for getAllMessages.' });
+            return;
         }
-        const user = req.user as User; // Explicitly assert the type
+        const user = req.user as AppUser; // Changed User to AppUser
         const senderId = user.id; // Use asserted user
     
         const page = parseInt(req.query.page as string) || 1;
@@ -275,7 +286,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         }));
     
         // Return final response
-        return res.status(200).json({
+        res.status(200).json({
           messages: formattedMessages,
           pagination: {
             totalMessages,
@@ -295,10 +306,12 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
               : '0%'
           }
         });
+        return;
     
       } catch (error) {
         console.error('Error getting all messages:', error);
-        return res.status(500).json({ error: 'Failed to get all messages' });
+        res.status(500).json({ error: 'Failed to get all messages' });
+        return;
       }
     };
 
@@ -306,10 +319,16 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
   try {
     const { id } = req.params;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) return res.status(400).json({ error: 'Invalid ID' });
+    if (!uuidRegex.test(id)) {
+      res.status(400).json({ error: 'Invalid ID' });
+      return;
+    }
 
     const { rows: messageRows } = await query('SELECT * FROM messages WHERE id = $1', [id]);
-    if (!messageRows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!messageRows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
     const message = messageRows[0];
 
@@ -340,10 +359,12 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       updatedAt: new Date(message.updatedat).toISOString(),
       reactions: reactionsWithReplies
     });
+    return;
 
   } catch (error) {
     console.error('Error fetching message:', error);
-    return res.status(500).json({ error: 'Failed to get message' });
+    res.status(500).json({ error: 'Failed to get message' });
+    return;
   }
 };
 
@@ -353,14 +374,16 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
   // Validate messageId as UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(messageId)) {
-    return res.status(400).json({ error: 'Invalid Message ID format.' });
+    res.status(400).json({ error: 'Invalid Message ID format.' });
+    return;
   }
 
   try {
     // Verify Message Exists
     const messageExistsResult = await query('SELECT id FROM messages WHERE id = $1', [messageId]);
     if (messageExistsResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found.' });
+      res.status(404).json({ error: 'Message not found.' });
+      return;
     }
 
     // Fetch all reactions for the message to get their IDs and videoUrls
@@ -368,7 +391,8 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     const reactionsToDelete = reactionsResult.rows; // Array of { id: reactionId, videourl: videoUrl }
 
     if (reactionsToDelete.length === 0) {
-      return res.status(200).json({ success: true, message: 'No reactions found for this message. Nothing to delete.' });
+      res.status(200).json({ success: true, message: 'No reactions found for this message. Nothing to delete.' });
+      return;
     }
 
     // Collect all reaction IDs
@@ -404,11 +428,13 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
       responseMessage += ' Some Cloudinary deletions may have failed, check logs.';
     }
 
-    return res.status(200).json({ success: true, message: responseMessage });
+    res.status(200).json({ success: true, message: responseMessage });
+    return;
 
   } catch (dbError) {
     console.error(`Error during database operation for message ${messageId} while deleting all reactions:`, dbError);
-    return res.status(500).json({ error: 'Failed to delete all reactions for the message due to a server error.' });
+    res.status(500).json({ error: 'Failed to delete all reactions for the message due to a server error.' });
+    return;
   }
 };
 
@@ -418,7 +444,8 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
   // Validate reactionId as UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(reactionId)) {
-    return res.status(400).json({ error: 'Invalid Reaction ID format.' });
+    res.status(400).json({ error: 'Invalid Reaction ID format.' });
+    return;
   }
 
   try {
@@ -426,7 +453,8 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
     const reactionQueryResult = await query('SELECT videoUrl FROM reactions WHERE id = $1', [reactionId]);
 
     if (reactionQueryResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Reaction not found.' });
+      res.status(404).json({ error: 'Reaction not found.' });
+      return;
     }
     const reactionVideoUrl = reactionQueryResult.rows[0].videourl;
 
@@ -456,11 +484,13 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
       responseMessage += ' Cloudinary deletion may have failed, check logs.';
     }
 
-    return res.status(200).json({ success: true, message: responseMessage });
+    res.status(200).json({ success: true, message: responseMessage });
+    return;
 
   } catch (dbError) {
     console.error(`Error during database operation for reaction ${reactionId}:`, dbError);
-    return res.status(500).json({ error: 'Failed to delete reaction due to a server error.' });
+    res.status(500).json({ error: 'Failed to delete reaction due to a server error.' });
+    return;
   }
 };
 
@@ -470,26 +500,32 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
     const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
     const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
 
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
     const message = rows[0];
     const hasPasscode = !!message.passcode;
 
     if (hasPasscode) {
-      return res.status(200).json({ id: message.id, hasPasscode: true, createdAt: new Date(message.createdat).toISOString() });
+      res.status(200).json({ id: message.id, hasPasscode: true, createdAt: new Date(message.createdat).toISOString() });
+      return;
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       id: message.id,
       content: message.content,
       imageUrl: message.imageurl,
       hasPasscode: false,
       createdAt: new Date(message.createdat).toISOString()
     });
+    return;
 
   } catch (error) {
     console.error('Error getting message by shareable link:', error);
-    return res.status(500).json({ error: 'Failed to get message' });
+    res.status(500).json({ error: 'Failed to get message' });
+    return;
   }
 };
 
@@ -501,12 +537,16 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
     const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
 
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
     const message = rows[0];
 
     if (message.passcode !== passcode) {
-      return res.status(403).json({ error: 'Invalid passcode', verified: false });
+      res.status(403).json({ error: 'Invalid passcode', verified: false });
+      return;
     }
 
     // Mark message as viewed asynchronously
@@ -525,10 +565,12 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         createdAt: new Date(message.createdat).toISOString()
       }
     });
+    return;
 
   } catch (error) {
     console.error('Error verifying passcode:', error);
-    return res.status(500).json({ error: 'Failed to verify passcode' });
+    res.status(500).json({ error: 'Failed to verify passcode' });
+    return;
   }
 };
 
@@ -536,10 +578,16 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
   try {
     const { id } = req.params;
     const { name } = req.body; // Added name
-    if (!req.file) return res.status(400).json({ error: 'No reaction video provided' });
+    if (!req.file) {
+      res.status(400).json({ error: 'No reaction video provided' });
+      return;
+    }
 
     const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2', [id, `%${id}`]);
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
     const messageId = rows[0].id;
     const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
@@ -569,10 +617,12 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       message: 'Reaction recorded successfully',
       reactionId: inserted[0].id
     });
+    return;
 
   } catch (error) {
     console.error('Error recording reaction:', error);
-    return res.status(500).json({ error: 'Failed to record reaction' });
+    res.status(500).json({ error: 'Failed to record reaction' });
+    return;
   }
 };
 
@@ -581,11 +631,20 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
     const { id: reactionId } = req.params;
     const { text } = req.body;
 
-    if (!text?.trim()) return res.status(400).json({ error: 'Reply text is required' });
-    if (text.length > 500) return res.status(400).json({ error: 'Reply text too long' });
+    if (!text?.trim()) {
+      res.status(400).json({ error: 'Reply text is required' });
+      return;
+    }
+    if (text.length > 500) {
+      res.status(400).json({ error: 'Reply text too long' });
+      return;
+    }
 
     const { rows } = await query('SELECT id FROM reactions WHERE id = $1', [reactionId]);
-    if (!rows.length) return res.status(404).json({ error: 'Reaction not found' });
+    if (!rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
 
     await query(`INSERT INTO replies (reactionId, text, createdAt, updatedAt) VALUES ($1, $2, NOW(), NOW())`, [reactionId, text.trim()]);
 
@@ -598,11 +657,13 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
       });
     }
 
-    return res.status(200).json({ success: true, message: 'Reply saved to reaction' });
+    res.status(200).json({ success: true, message: 'Reply saved to reaction' });
+    return;
 
   } catch (error) {
     console.error('Error recording reply:', error);
-    return res.status(500).json({ error: 'Failed to record reply' });
+    res.status(500).json({ error: 'Failed to record reply' });
+    return;
   }
 };
 
@@ -612,13 +673,18 @@ export const skipReaction = async (req: Request, res: Response): Promise<void> =
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
     const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
 
-    if (!rows.length) return res.status(404).json({ error: 'Message not found' });
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
 
-    return res.status(200).json({ success: true, message: 'Reaction skipped' });
+    res.status(200).json({ success: true, message: 'Reaction skipped' });
+    return;
 
   } catch (error) {
     console.error('Error skipping reaction:', error);
-    return res.status(500).json({ error: 'Failed to skip reaction' });
+    res.status(500).json({ error: 'Failed to skip reaction' });
+    return;
   }
 };
 
@@ -634,17 +700,20 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       );
   
       if (!rows.length) {
-        return res.status(404).json({ error: 'Reaction not found' });
+        res.status(404).json({ error: 'Reaction not found' });
+        return;
       }
   
       const reaction = rows[0];
-      return res.status(200).json({
+      res.status(200).json({
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString()
       });
+      return;
     } catch (error) {
       console.error('Error fetching reaction by ID:', error);
-      return res.status(500).json({ error: 'Failed to get reaction' });
+      res.status(500).json({ error: 'Failed to get reaction' });
+      return;
     }
   };
 
@@ -663,7 +732,8 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     }
 
     if (messageQueryResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
     const message = messageQueryResult.rows[0];
@@ -721,11 +791,13 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
         responseMessage += ' Some Cloudinary deletions may have failed, check logs.';
     }
 
-    return res.status(200).json({ success: true, message: responseMessage });
+    res.status(200).json({ success: true, message: responseMessage });
+    return;
 
   } catch (dbError) {
     console.error('Error during database operation in deleteMessageAndReaction:', dbError);
-    return res.status(500).json({ error: 'Failed to delete message and associated data due to a server error.' });
+    res.status(500).json({ error: 'Failed to delete message and associated data due to a server error.' });
+    return;
   }
 };
 
@@ -735,7 +807,10 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
 
   console.log("Received sessionId:", sessionId);
   
-  if (!sessionId) return res.status(400).json({ error: 'Missing session ID' });
+  if (!sessionId) {
+    res.status(400).json({ error: 'Missing session ID' });
+    return;
+  }
 
   try {
     // Verify message exists
@@ -744,7 +819,8 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
       [messageId]
     );
     if (!messageRows.length) {
-      return res.status(404).json({ error: 'Message not found' });
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
     // Check for existing reaction by session
@@ -754,7 +830,8 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     );
 
     if (existing.length > 0) {
-      return res.status(200).json({ reactionId: existing[0].id });
+      res.status(200).json({ reactionId: existing[0].id });
+      return;
     }
 
     // Create new reaction
@@ -776,7 +853,8 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     console.log("Reaction inserted with ID:", inserted[0]?.id);
 
     
-    return res.status(201).json({ reactionId: inserted[0].id });
+    res.status(201).json({ reactionId: inserted[0].id });
+    return;
 
   } catch (error: any) {
     console.error('❌ Error initializing reaction:', {
@@ -784,13 +862,17 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
       stack: error.stack,
     });
 
-    return res.status(500).json({ error: 'Failed to initialize reaction' });
+    res.status(500).json({ error: 'Failed to initialize reaction' });
+    return;
   }
 };
 
 export const uploadReactionVideo = async (req: Request, res: Response): Promise<void> => {
   const { reactionId } = req.params;
-  if (!req.file) return res.status(400).json({ error: 'No video file provided' });
+  if (!req.file) {
+    res.status(400).json({ error: 'No video file provided' });
+    return;
+  }
 
   try {
     const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
@@ -818,9 +900,11 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       message: 'Video uploaded successfully',
       videoUrl: videoUrl, // ensure videoUrl is passed in response
     });
+    return;
   } catch (error) {
     console.error('Error uploading reaction video:', error);
-    return res.status(500).json({ error: 'Failed to upload reaction video' });
+    res.status(500).json({ error: 'Failed to upload reaction video' });
+    return;
   }
 };
 
@@ -836,9 +920,11 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
       [messageId]
     );
 
-    return res.status(200).json(rows);
+    res.status(200).json(rows);
+    return;
   } catch (error) {
     console.error('Error fetching reactions by message ID:', error);
-    return res.status(500).json({ error: 'Failed to fetch reactions' });
+    res.status(500).json({ error: 'Failed to fetch reactions' });
+    return;
   }
 };
