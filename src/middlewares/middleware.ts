@@ -1,17 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AppUser } from '../entity/User'; // Changed User to AppUser
+import { AppUser } from '../entity/User'; // Import kept for type assertions
 import { query } from '../config/database.config';
 // AuthenticatedRequest import removed
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AppUser; // Changed User to AppUser
-      token?: string;
-    }
-  }
-}
+// Global Express Request augmentation removed, will be handled by src/types/express.d.ts
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction):Promise<any> => {
   const authHeader = req.headers.authorization;
@@ -31,14 +24,17 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
-export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+export const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user) {
     // This case should ideally be caught by requireAuth first,
     // but as a safeguard:
-    return res.status(401).json({ error: 'Authentication required.' });
+    res.status(401).json({ error: 'Authentication required.' });
+    return;
   }
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+  const user = req.user as AppUser; // Assert type
+  if (user.role !== 'admin') {
+    res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+    return;
   }
   next();
 };
