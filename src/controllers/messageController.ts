@@ -6,12 +6,10 @@ import { Readable } from 'stream';
 import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
-import { User } from '../entity/User'; // Added import for User
+import { User } from '../entity/User'; // User import is kept
 import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
 
-export interface AuthenticatedRequest extends Request {
-  user?: User; // Changed to use the User entity
-}
+// AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
 // Cloudinary setup
 cloudinary.config({
@@ -146,19 +144,27 @@ const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
 };
 
 // === Controllers ===
-export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
+export const sendMessage = (req: Request, res: Response) => {
   upload(req, res, async (err) => {
     if (err) return res.status(err instanceof multer.MulterError ? 400 : 500).json({ error: err.message });
 
     // Authorization check
+    // requireAuth ensures req.user is present. If not, it would have already sent a 401.
+    // So, we can safely assert req.user here if the logic proceeds past requireAuth.
+    if (!req.user) {
+        // This should ideally not be reached if requireAuth is effective.
+        return res.status(401).json({ error: 'User not authenticated for sendMessage authorization.' });
+    }
+    const user = req.user as User; // Explicitly assert the type
+
     const allowedEmails = ['danobrooks@gmail.com', 'dan@normal.ninja'];
-    if (req.user && req.user.email && !allowedEmails.includes(req.user.email)) {
+    if (user.email && !allowedEmails.includes(user.email)) { // Use asserted user
       return res.status(403).json({ error: 'You are not authorized to send messages.' });
     }
 
     try {
       const { content, passcode } = req.body;
-      const senderId = req.user?.id;
+      const senderId = user.id; // Use asserted user
       if (!content) return res.status(400).json({ error: 'Message content is required' });
 
       let mediaUrl: string | null = null;
@@ -196,10 +202,14 @@ export const sendMessage = (req: AuthenticatedRequest, res: Response) => {
   });
 };
 
-export const getAllMessages = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllMessages = async (req: Request, res: Response): Promise<void> => {
       try {
-        const senderId = req.user?.id;
-        if (!senderId) return res.status(401).json({ error: 'User not authenticated' });
+        if (!req.user) {
+            // This should ideally not be reached if requireAuth is effective.
+            return res.status(401).json({ error: 'User not authenticated for getAllMessages.' });
+        }
+        const user = req.user as User; // Explicitly assert the type
+        const senderId = user.id; // Use asserted user
     
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 20;
@@ -292,7 +302,7 @@ export const getAllMessages = async (req: AuthenticatedRequest, res: Response) =
       }
     };
 
-export const getMessageById = async (req: AuthenticatedRequest, res: Response) => {
+export const getMessageById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -337,7 +347,7 @@ export const getMessageById = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
-export const deleteAllReactionsForMessage = async (req: Request, res: Response) => {
+export const deleteAllReactionsForMessage = async (req: Request, res: Response): Promise<void> => {
   const { messageId } = req.params;
 
   // Validate messageId as UUID
@@ -402,7 +412,7 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response) 
   }
 };
 
-export const deleteReactionById = async (req: Request, res: Response) => {
+export const deleteReactionById = async (req: Request, res: Response): Promise<void> => {
   const { reactionId } = req.params;
 
   // Validate reactionId as UUID
@@ -454,7 +464,7 @@ export const deleteReactionById = async (req: Request, res: Response) => {
   }
 };
 
-export const getMessageByShareableLink = async (req: Request, res: Response) => {
+export const getMessageByShareableLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { linkId } = req.params;
     const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
@@ -483,7 +493,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response) => 
   }
 };
 
-export const verifyMessagePasscode = async (req: Request, res: Response) => {
+export const verifyMessagePasscode = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { passcode } = req.body;
@@ -522,7 +532,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response) => {
   }
 };
 
-export const recordReaction = async (req: Request, res: Response) => {
+export const recordReaction = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { name } = req.body; // Added name
@@ -566,7 +576,7 @@ export const recordReaction = async (req: Request, res: Response) => {
   }
 };
 
-export const recordTextReply = async (req: Request, res: Response) => {
+export const recordTextReply = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id: reactionId } = req.params;
     const { text } = req.body;
@@ -596,7 +606,7 @@ export const recordTextReply = async (req: Request, res: Response) => {
   }
 };
 
-export const skipReaction = async (req: Request, res: Response) => {
+export const skipReaction = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
@@ -612,7 +622,7 @@ export const skipReaction = async (req: Request, res: Response) => {
   }
 };
 
-export const getReactionById = async (req: Request, res: Response) => {
+export const getReactionById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
   
@@ -638,7 +648,7 @@ export const getReactionById = async (req: Request, res: Response) => {
     }
   };
 
-export const deleteMessageAndReaction = async (req: Request, res: Response) => {
+export const deleteMessageAndReaction = async (req: Request, res: Response): Promise<void> => {
   const { id: paramId } = req.params; // paramId can be message UUID or shareableLink part
 
   try {
@@ -719,7 +729,7 @@ export const deleteMessageAndReaction = async (req: Request, res: Response) => {
   }
 };
 
-export const initReaction = async (req: Request, res: Response) => {
+export const initReaction = async (req: Request, res: Response): Promise<void> => {
   const { messageId } = req.params;
   const { sessionId, name } = req.body; // Added name
 
@@ -778,7 +788,7 @@ export const initReaction = async (req: Request, res: Response) => {
   }
 };
 
-export const uploadReactionVideo = async (req: Request, res: Response) => {
+export const uploadReactionVideo = async (req: Request, res: Response): Promise<void> => {
   const { reactionId } = req.params;
   if (!req.file) return res.status(400).json({ error: 'No video file provided' });
 
@@ -814,7 +824,7 @@ export const uploadReactionVideo = async (req: Request, res: Response) => {
   }
 };
 
-export const getReactionsByMessageId = async (req: Request, res: Response) => {
+export const getReactionsByMessageId = async (req: Request, res: Response): Promise<void> => {
   const { messageId } = req.params;
 
   try {

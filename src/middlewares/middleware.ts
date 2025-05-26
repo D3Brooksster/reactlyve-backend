@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../entity/User';
 import { query } from '../config/database.config';
-import { AuthenticatedRequest } from '../controllers/messageController';
+// AuthenticatedRequest import removed
 
 declare global {
   namespace Express {
@@ -31,7 +31,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
-export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     // This case should ideally be caught by requireAuth first,
     // but as a safeguard:

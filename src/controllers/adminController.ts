@@ -4,7 +4,7 @@ import { User } from '../entity/User';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
-export const getAllUsers = async (req: Request, res: Response) => {
+export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rows: users } = await query(
       'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
@@ -17,7 +17,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
-export const updateUserRole = async (req: Request, res: Response) => {
+export const updateUserRole = async (req: Request, res: Response): Promise<void> => {
   const { userId } = req.params;
   const { role: newRole } = req.body;
 
@@ -28,8 +28,11 @@ export const updateUserRole = async (req: Request, res: Response) => {
   // Prevent admin from changing their own role if they are the one making the request
   // This is a safety measure. Admins should not accidentally demote themselves.
   // Another admin would be needed to change their role.
-  if (req.user && req.user.id === userId && req.user.role === 'admin' && newRole !== 'admin') {
-    return res.status(403).json({ error: 'Admins cannot change their own role to a non-admin role via this endpoint.' });
+  if (req.user) {
+    const adminPerformingAction = req.user as User;
+    if (adminPerformingAction.id === userId && adminPerformingAction.role === 'admin' && newRole !== 'admin') {
+      return res.status(403).json({ error: 'Admins cannot change their own role to a non-admin role via this endpoint.' });
+    }
   }
 
 
@@ -49,7 +52,7 @@ export const updateUserRole = async (req: Request, res: Response) => {
   }
 };
 
-export const removeUser = async (req: Request, res: Response) => {
+export const removeUser = async (req: Request, res: Response): Promise<void> => {
   const { userId } = req.params; // User ID to delete
 
   if (!userId) {
@@ -57,8 +60,11 @@ export const removeUser = async (req: Request, res: Response) => {
   }
 
   // Prevent admin from removing themselves using this endpoint
-  if (req.user && req.user.id === userId) {
-    return res.status(400).json({ error: 'Admin cannot remove themselves using this endpoint. Use profile deletion for your own account.' });
+  if (req.user) {
+    const adminPerformingAction = req.user as User;
+    if (adminPerformingAction.id === userId) {
+      return res.status(400).json({ error: 'Admin cannot remove themselves using this endpoint. Use profile deletion for your own account.' });
+    }
   }
 
   try {

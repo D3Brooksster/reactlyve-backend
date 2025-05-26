@@ -66,8 +66,17 @@ export const googleCallback = (req: Request, res: Response) => {
 
 export const getCurrentUser = (req: Request, res: Response) => {
   try {
-    return res.json({ user: req.user });
+    // requireAuth middleware should ensure req.user is populated.
+    // If req.user is not present here, requireAuth did not call next() or there's a middleware setup issue.
+    if (!req.user) { 
+      // This case should ideally be handled by requireAuth, but as a safeguard.
+      return res.status(401).json({ error: 'Not authenticated, user not found on request.' });
+    }
+    const user = req.user as User; // Explicitly assert the type
+    return res.json({ user: user }); // Use asserted user
   } catch (error) {
-    
+    // It's good practice to log the error and send a generic server error response.
+    console.error("Error in getCurrentUser:", error);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 };

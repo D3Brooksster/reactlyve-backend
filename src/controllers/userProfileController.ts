@@ -5,14 +5,15 @@ import { User } from '../entity/User';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
-export const getMyProfile = async (req: Request, res: Response) => {
+export const getMyProfile = async (req: Request, res: Response): Promise<void> => {
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
+  const user = req.user as User; // Explicitly assert the type
 
   // Extract user details from req.user
   // Ensure all fields required by the client or for display are included
-  const { id, name, email, picture, last_login, role, created_at, blocked } = req.user;
+  const { id, name, email, picture, last_login, role, created_at, blocked } = user; // Use asserted user
 
   return res.json({
     id,
@@ -26,11 +27,12 @@ export const getMyProfile = async (req: Request, res: Response) => {
   });
 };
 
-export const deleteMyAccount = async (req: Request, res: Response) => {
-  if (!req.user || !req.user.id) {
+export const deleteMyAccount = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) { // The req.user.id check is implicitly covered by this
     return res.status(401).json({ error: 'Not authenticated or user ID missing' });
   }
-  const userId = req.user.id;
+  const user = req.user as User; // Explicitly assert the type
+  const userId = user.id; // Use asserted user
 
   try {
     await query('BEGIN', []);
