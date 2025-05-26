@@ -3,12 +3,9 @@ import { query } from '../config/database.config';
 import { User } from '../entity/User';
 // import { deleteFromCloudinary } from './messageController'; // Not exported, so cannot be directly used
 
-// Define AuthenticatedRequest as it's used in function signatures
-interface AuthenticatedRequest extends Request {
-  user?: User; // Assuming User is the type of your authenticated user object
-}
+// AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
-export const getMyProfile = async (req: AuthenticatedRequest, res: Response) => {
+export const getMyProfile = async (req: Request, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
@@ -29,7 +26,7 @@ export const getMyProfile = async (req: AuthenticatedRequest, res: Response) => 
   });
 };
 
-export const deleteMyAccount = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteMyAccount = async (req: Request, res: Response) => {
   if (!req.user || !req.user.id) {
     return res.status(401).json({ error: 'Not authenticated or user ID missing' });
   }

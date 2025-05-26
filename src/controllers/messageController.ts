@@ -6,13 +6,11 @@ import { Readable } from 'stream';
 import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
+import { User } from '../entity/User'; // Added import for User
 import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
 
 export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email?: string; // Added email to user object
-  };
+  user?: User; // Changed to use the User entity
 }
 
 // Cloudinary setup

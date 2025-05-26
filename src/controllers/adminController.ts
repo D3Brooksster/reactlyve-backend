@@ -2,11 +2,9 @@ import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { User } from '../entity/User';
 
-interface AuthenticatedRequest extends Request {
-  user?: User; // For the admin performing the action
-}
+// AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
-export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const { rows: users } = await query(
       'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
@@ -19,7 +17,7 @@ export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateUserRole = async (req: AuthenticatedRequest, res: Response) => {
+export const updateUserRole = async (req: Request, res: Response) => {
   const { userId } = req.params;
   const { role: newRole } = req.body;
 
@@ -51,7 +49,7 @@ export const updateUserRole = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
-export const removeUser = async (req: AuthenticatedRequest, res: Response) => {
+export const removeUser = async (req: Request, res: Response) => {
   const { userId } = req.params; // User ID to delete
 
   if (!userId) {
