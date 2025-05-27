@@ -145,7 +145,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageUrl, shareableLink, passcode, viewed, createdAt, updatedAt
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat
            FROM messages 
            WHERE senderId = $1 
            ORDER BY createdAt DESC 
@@ -160,7 +160,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         if (messageIds.length > 0) {
           const { rows: reactions } = await query(
-            `SELECT id, messageId, name, createdAt
+            `SELECT id, messageid, name, createdat
              FROM reactions
              WHERE messageId = ANY($1::uuid[])`,
             [messageIds]
@@ -242,7 +242,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageId = $1 ORDER BY createdAt ASC', [id]);
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
-      const { rows: replies } = await query('SELECT id, text, createdAt FROM replies WHERE reactionId = $1', [reaction.id]);
+      const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
       return {
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
@@ -255,7 +255,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       };
     }));
 
-    return res.status(200).json({
+    res.status(200).json({
       ...message,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
@@ -289,7 +289,7 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     }
 
     // Fetch all reactions for the message to get their IDs and videoUrls
-    const reactionsResult = await query('SELECT id, videoUrl FROM reactions WHERE messageId = $1', [messageId]);
+    const reactionsResult = await query('SELECT id, videourl FROM reactions WHERE messageId = $1', [messageId]);
     const reactionsToDelete = reactionsResult.rows; // Array of { id: reactionId, videourl: videoUrl }
 
     if (reactionsToDelete.length === 0) {
@@ -352,7 +352,7 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
 
   try {
     // Fetch Reaction to get videoUrl
-    const reactionQueryResult = await query('SELECT videoUrl FROM reactions WHERE id = $1', [reactionId]);
+    const reactionQueryResult = await query('SELECT videourl FROM reactions WHERE id = $1', [reactionId]);
 
     if (reactionQueryResult.rows.length === 0) {
       res.status(404).json({ error: 'Reaction not found.' });
@@ -400,7 +400,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
   try {
     const { linkId } = req.params;
     const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
 
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
@@ -437,7 +437,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
     const { passcode } = req.body;
 
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
 
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
@@ -456,7 +456,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       verified: true,
       message: {
         id: message.id,
@@ -485,7 +485,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareableLink LIKE $2', [id, `%${id}`]);
+    const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [id, `%${id}`]);
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
       return;
@@ -514,7 +514,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       });
     }
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: 'Reaction recorded successfully',
       reactionId: inserted[0].id
@@ -551,7 +551,7 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
     await query(`INSERT INTO replies (reactionId, text, createdAt, updatedAt) VALUES ($1, $2, NOW(), NOW())`, [reactionId, text.trim()]);
 
     // Update isreply status of the parent message
-    const reactionResult = await query('SELECT messageId FROM reactions WHERE id = $1', [reactionId]);
+    const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
     if (reactionResult.rows.length > 0) {
       const messageId = reactionResult.rows[0].messageid;
       query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
@@ -573,7 +573,7 @@ export const skipReaction = async (req: Request, res: Response): Promise<void> =
   try {
     const { id } = req.params;
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareableLink = $1', [shareableLink]);
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
 
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
@@ -595,7 +595,7 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       const { id } = req.params;
   
       const { rows } = await query(
-        `SELECT id, messageId, videoUrl, thumbnailUrl, duration, name, createdAt
+        `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat
          FROM reactions
          WHERE id = $1`,
         [id]
@@ -625,12 +625,12 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
   try {
     // 1. Fetch Message and its imageUrl
     // Try finding by direct ID first, then by shareable link part.
-    let messageQueryResult = await query('SELECT id, imageUrl FROM messages WHERE id = $1', [paramId]);
+    let messageQueryResult = await query('SELECT id, imageurl FROM messages WHERE id = $1', [paramId]);
     if (messageQueryResult.rows.length === 0) {
       // Try finding by shareable link if not a direct UUID match (or if paramId wasn't a UUID)
       // Constructing the like pattern for shareableLink
       const shareableLinkPattern = `%/${paramId}`;
-      messageQueryResult = await query('SELECT id, imageUrl FROM messages WHERE shareableLink LIKE $1', [shareableLinkPattern]);
+      messageQueryResult = await query('SELECT id, imageurl FROM messages WHERE shareablelink LIKE $1', [shareableLinkPattern]);
     }
 
     if (messageQueryResult.rows.length === 0) {
@@ -643,7 +643,7 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     const messageImageUrl = message.imageurl;
 
     // 2. Fetch Reactions and their videoUrls
-    const reactionsQueryResult = await query('SELECT id, videoUrl FROM reactions WHERE messageId = $1', [messageId]);
+    const reactionsQueryResult = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
     const reactions = reactionsQueryResult.rows; // Array of { id: reactionId, videourl: videoUrl }
 
     // 3. Database Deletion (Order is Important)
@@ -727,7 +727,7 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
 
     // Check for existing reaction by session
     const { rows: existing } = await query(
-      `SELECT id FROM reactions WHERE messageId = $1 AND sessionId = $2`,
+      `SELECT id FROM reactions WHERE messageid = $1 AND sessionid = $2`,
       [messageId, sessionId]
     );
 
@@ -789,7 +789,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     );
 
     // Update isreply status of the parent message
-    const reactionResult = await query('SELECT messageId FROM reactions WHERE id = $1', [reactionId]);
+    const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
     if (reactionResult.rows.length > 0) {
       const messageId = reactionResult.rows[0].messageid;
       query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
@@ -797,7 +797,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       videoUrl: videoUrl, // ensure videoUrl is passed in response
@@ -815,7 +815,7 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
 
   try {
     const { rows } = await query(
-      `SELECT id, videoUrl, thumbnailUrl, duration, createdAt, updatedAt 
+      `SELECT id, videourl, thumbnailurl, duration, createdat, updatedat 
        FROM reactions 
        WHERE messageId = $1 
        ORDER BY createdAt ASC`,
