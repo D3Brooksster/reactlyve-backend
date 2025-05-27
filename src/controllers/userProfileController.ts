@@ -17,7 +17,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
   // Ensure all fields required by the client or for display are included
   const { id, name, email, picture, last_login, role, created_at, blocked } = user; // Use asserted user
 
-  return res.json({
+  res.json({
     id,
     name,
     email,
@@ -42,25 +42,25 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
     await query('BEGIN', []);
 
     // 1. Fetch all messages by the user to get their IDs and imageURLs for Cloudinary deletion
-    const { rows: messages } = await query('SELECT id, "imageUrl" FROM messages WHERE "senderId" = $1', [userId]);
+    const { rows: messages } = await query('SELECT id, imageurl FROM messages WHERE senderid = $1', [userId]);
 
     for (const message of messages) {
       const messageId = message.id;
       const messageImageUrl = message.imageUrl; // Corrected casing from 'imageurl'
 
       // 2. Fetch reactions for each message to get their IDs and videoURLs for Cloudinary deletion
-      const { rows: reactions } = await query('SELECT id, "videoUrl" FROM reactions WHERE "messageId" = $1', [messageId]);
+      const { rows: reactions } = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
       const reactionIds = reactions.map(r => r.id);
       const reactionVideoUrls = reactions.map(r => r.videoUrl).filter(url => url); // Corrected casing and filter nulls
 
       // 3. Delete replies associated with these reactions (if any reactionIds)
       if (reactionIds.length > 0) {
-        await query('DELETE FROM replies WHERE "reactionId" = ANY($1::uuid[])', [reactionIds]);
+        await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
       }
 
       // 4. Delete reactions associated with the message
       // This must happen AFTER deleting replies due to foreign key constraints
-      await query('DELETE FROM reactions WHERE "messageId" = $1', [messageId]);
+      await query('DELETE FROM reactions WHERE messageid = $1', [messageId]);
       
       // 5. Delete the message itself
       // This must happen AFTER deleting reactions
