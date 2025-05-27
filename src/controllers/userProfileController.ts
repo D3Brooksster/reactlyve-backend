@@ -65,20 +65,30 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
       // This must happen AFTER deleting reactions
       await query('DELETE FROM messages WHERE id = $1', [messageId]);
 
-      // 6. Cloudinary Deletion (STUBBED FOR NOW)
-      // console.log(`TODO: Delete message image from Cloudinary: ${messageImageUrl}`);
-      // if (messageImageUrl) { 
-      //   // Attempt to extract public_id and call deleteFromCloudinary or cloudinary.uploader.destroy
-      //   // Example: const publicId = extractPublicIdFromUrl(messageImageUrl);
-      //   // if (publicId) await cloudinary.uploader.destroy(publicId);
-      // }
-      // for (const videoUrl of reactionVideoUrls) {
-      //   console.log(`TODO: Delete reaction video from Cloudinary: ${videoUrl}`);
-      //   if (videoUrl) {
-      //     // const publicId = extractPublicIdFromUrl(videoUrl);
-      //     // if (publicId) await cloudinary.uploader.destroy(publicId);
-      //   }
-      // }
+      // 6. Cloudinary Deletion
+      if (messageImageUrl) {
+        try {
+          console.log(`Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
+          await deleteFromCloudinary(messageImageUrl);
+          console.log(`Successfully deleted message image: ${messageImageUrl}`);
+        } catch (cloudinaryError) {
+          console.error(`Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
+          // Do not re-throw, allow the process to continue
+        }
+      }
+
+      for (const videoUrl of reactionVideoUrls) {
+        if (videoUrl) {
+          try {
+            console.log(`Attempting to delete reaction video from Cloudinary: ${videoUrl}`);
+            await deleteFromCloudinary(videoUrl);
+            console.log(`Successfully deleted reaction video: ${videoUrl}`);
+          } catch (cloudinaryError) {
+            console.error(`Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
+            // Do not re-throw, allow the process to continue
+          }
+        }
+      }
     }
 
     // 7. Delete the user record from the users table

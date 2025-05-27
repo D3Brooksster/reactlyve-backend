@@ -128,19 +128,30 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       // 5. Delete the message itself
       await query('DELETE FROM messages WHERE id = $1', [messageId]);
 
-      // 6. Cloudinary Deletion (STUBBED)
-      // console.log(`TODO: Delete message image from Cloudinary: ${messageImageUrl}`);
-      // if (messageImageUrl) { 
-      //   // const publicId = extractPublicIdFromUrl(messageImageUrl); // Conceptual
-      //   // if (publicId) await cloudinary.uploader.destroy(publicId); // Conceptual
-      // }
-      // for (const videoUrl of reactionVideoUrls) {
-      //   console.log(`TODO: Delete reaction video from Cloudinary: ${videoUrl}`);
-      //   if (videoUrl) {
-      //     // const publicId = extractPublicIdFromUrl(videoUrl); // Conceptual
-      //     // if (publicId) await cloudinary.uploader.destroy(publicId); // Conceptual
-      //   }
-      // }
+      // 6. Cloudinary Deletion
+      if (messageImageUrl) {
+        try {
+          console.log(`Admin: Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
+          await deleteFromCloudinary(messageImageUrl);
+          console.log(`Admin: Successfully deleted message image: ${messageImageUrl}`);
+        } catch (cloudinaryError) {
+          console.error(`Admin: Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
+          // Do not re-throw, allow the process to continue
+        }
+      }
+
+      for (const videoUrl of reactionVideoUrls) {
+        if (videoUrl) {
+          try {
+            console.log(`Admin: Attempting to delete reaction video from Cloudinary: ${videoUrl}`);
+            await deleteFromCloudinary(videoUrl);
+            console.log(`Admin: Successfully deleted reaction video: ${videoUrl}`);
+          } catch (cloudinaryError) {
+            console.error(`Admin: Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
+            // Do not re-throw, allow the process to continue
+          }
+        }
+      }
     }
 
     // 7. Delete the user record from the users table
