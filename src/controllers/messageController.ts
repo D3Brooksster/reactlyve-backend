@@ -88,7 +88,7 @@ export const sendMessage = (req: Request, res: Response) => {
       const shareableLink = generateShareableLink();
 
       const { rows } = await query(
-        `INSERT INTO messages (senderId, content, imageurl, passcode, shareablelink, mediatype)
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
         [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType]
       );
@@ -148,7 +148,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
           `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat
            FROM messages 
            WHERE senderid = $1 
-           ORDER BY createdAt DESC 
+           ORDER BY createdat DESC 
            LIMIT $2 OFFSET $3`,
           [senderId, limit, offset]
         );
@@ -239,7 +239,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       console.error('Failed to mark message as viewed:', err);
     });
 
-    const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdAt ASC', [id]);
+    const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdat ASC', [id]);
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
@@ -548,7 +548,7 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    await query(`INSERT INTO replies (reactionId, text, createdAt, updatedAt) VALUES ($1, $2, NOW(), NOW())`, [reactionId, text.trim()]);
+    await query(`INSERT INTO replies (reactionid, text, createdat, updatedat) VALUES ($1, $2, NOW(), NOW())`, [reactionId, text.trim()]);
 
     // Update isreply status of the parent message
     const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
@@ -705,11 +705,11 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
 
 export const initReaction = async (req: Request, res: Response): Promise<void> => {
   const { messageId } = req.params;
-  const { sessionId, name } = req.body; // Added name
+  const { sessionid, name } = req.body; // Added name
 
-  console.log("Received sessionId:", sessionId);
+  console.log("Received sessionid:", sessionid);
   
-  if (!sessionId) {
+  if (!sessionid) {
     res.status(400).json({ error: 'Missing session ID' });
     return;
   }
@@ -728,7 +728,7 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     // Check for existing reaction by session
     const { rows: existing } = await query(
       `SELECT id FROM reactions WHERE messageid = $1 AND sessionid = $2`,
-      [messageId, sessionId]
+      [messageId, sessionid]
     );
 
     if (existing.length > 0) {
@@ -737,13 +737,13 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     }
 
     // Create new reaction
-    console.log("About to insert new reaction with values:", { messageId, sessionId, name }); // Added name
+    console.log("About to insert new reaction with values:", { messageId, sessionid, name }); // Added name
 
     let insertQuery = `
-      INSERT INTO reactions (messageId, sessionId, createdAt, updatedAt${name ? ', name' : ''})
+      INSERT INTO reactions (messageid, sessionid, createdat, updatedat${name ? ', name' : ''})
       VALUES ($1, $2, NOW(), NOW()${name ? ', $3' : ''}) RETURNING id`;
     
-    const queryParams = [messageId, sessionId];
+    const queryParams = [messageId, sessionid];
     if (name) {
       queryParams.push(name);
     }
@@ -783,7 +783,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
 
     await query(
       `UPDATE reactions
-       SET videoUrl = $1, thumbnailUrl = $2, duration = $3, updatedAt = NOW()
+       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW()
        WHERE id = $4`,
       [videoUrl, thumbnailUrl, duration, reactionId]
     );
@@ -818,11 +818,20 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
       `SELECT id, videourl, thumbnailurl, duration, createdat, updatedat 
        FROM reactions 
        WHERE messageid = $1 
-       ORDER BY createdAt ASC`,
+       ORDER BY createdat ASC`,
       [messageId]
     );
 
-    res.status(200).json(rows);
+    const formattedReactions = rows.map(reaction => ({
+      id: reaction.id,
+      videoUrl: reaction.videourl,
+      thumbnailUrl: reaction.thumbnailurl,
+      duration: reaction.duration,
+      createdAt: new Date(reaction.createdat).toISOString(),
+      updatedAt: new Date(reaction.updatedat).toISOString()
+    }));
+
+    res.status(200).json(formattedReactions);
     return;
   } catch (error) {
     console.error('Error fetching reactions by message ID:', error);

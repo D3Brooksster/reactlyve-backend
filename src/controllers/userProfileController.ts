@@ -13,19 +13,18 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
   }
   const user = req.user as AppUser; // Changed User to AppUser
 
-  // Extract user details from req.user
-  // Ensure all fields required by the client or for display are included
-  const { id, name, email, picture, last_login, role, created_at, blocked } = user; // Use asserted user
-
+  // Extract user details from req.user and map to camelCase for the response
   res.json({
-    id,
-    name,
-    email,
-    picture,
-    last_login,
-    role,
-    created_at,
-    blocked // Assuming 'blocked' status might also be relevant for a profile
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    picture: user.picture,
+    googleId: user.google_id, // Map google_id to googleId
+    lastLogin: user.last_login ? new Date(user.last_login).toISOString() : null, // Map last_login to lastLogin
+    role: user.role,
+    createdAt: user.created_at ? new Date(user.created_at).toISOString() : null, // Map created_at to createdAt
+    updatedAt: user.updated_at ? new Date(user.updated_at).toISOString() : null, // Map updated_at to updatedAt
+    blocked: user.blocked
   });
   return;
 };

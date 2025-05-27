@@ -11,7 +11,19 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
       []
     );
-    res.json(users);
+    const formattedUsers = users.map(user => ({
+      id: user.id,
+      googleId: user.google_id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      role: user.role,
+      blocked: user.blocked,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at,
+      lastLogin: user.last_login,
+    }));
+    res.json(formattedUsers);
     return;
   } catch (error) {
     console.error('Error fetching all users:', error);
@@ -51,7 +63,20 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
       res.status(404).json({ error: 'User not found.' });
       return;
     }
-    res.json(updatedUsers[0]);
+    const updatedUser = updatedUsers[0];
+    const formattedUser = {
+      id: updatedUser.id,
+      googleId: updatedUser.google_id, // Assuming google_id might be returned, though not in SELECT
+      email: updatedUser.email,
+      name: updatedUser.name,
+      picture: updatedUser.picture, // Assuming picture might be returned
+      role: updatedUser.role,
+      blocked: updatedUser.blocked,
+      createdAt: updatedUser.created_at,
+      updatedAt: updatedUser.updated_at,
+      lastLogin: updatedUser.last_login,
+    };
+    res.json(formattedUser);
     return;
   } catch (error) {
     console.error(`Error updating role for user ${userId}:`, error);
