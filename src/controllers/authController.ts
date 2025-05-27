@@ -75,7 +75,19 @@ export const getCurrentUser = (req: Request, res: Response) => {
       return;
     }
     const user = req.user as AppUser; // Changed User to AppUser
-    res.json({ user: user }); // Use asserted user
+    const formattedUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      picture: user.picture,
+      role: user.role,
+      blocked: user.blocked,
+      googleId: user.google_id,
+      createdAt: user.created_at ? new Date(user.created_at).toISOString() : null,
+      updatedAt: user.updated_at ? new Date(user.updated_at).toISOString() : null,
+      lastLogin: user.last_login ? new Date(user.last_login).toISOString() : null,
+    };
+    res.json({ user: formattedUser }); // Use formatted user
     return;
   } catch (error) {
     // It's good practice to log the error and send a generic server error response.
