@@ -88,7 +88,7 @@ export const sendMessage = (req: Request, res: Response) => {
       const shareableLink = generateShareableLink();
 
       const { rows } = await query(
-        `INSERT INTO messages (senderId, content, imageUrl, passcode, shareableLink, mediaType)
+        `INSERT INTO messages (senderId, content, imageurl, passcode, shareablelink, mediatype)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
         [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType]
       );
@@ -497,7 +497,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     const queryText = `
-      INSERT INTO reactions (messageId, videoUrl, thumbnailUrl, duration, createdAt, updatedAt${name ? ', name' : ''})
+      INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''})
       VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}) RETURNING id`;
     
     const queryParams = [messageId, videoUrl, thumbnailUrl, duration];
