@@ -255,7 +255,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       };
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       ...message,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
@@ -456,7 +456,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       verified: true,
       message: {
         id: message.id,
@@ -514,7 +514,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Reaction recorded successfully',
       reactionId: inserted[0].id
@@ -797,7 +797,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       videoUrl: videoUrl, // ensure videoUrl is passed in response
