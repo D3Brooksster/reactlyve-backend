@@ -81,24 +81,24 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
     await query('BEGIN', []);
 
     // 1. Fetch all messages by the target user to get their IDs and imageURLs for Cloudinary deletion
-    const { rows: messages } = await query('SELECT id, "imageUrl" FROM messages WHERE "senderId" = $1', [userId]);
+    const { rows: messages } = await query('SELECT id, imageurl FROM messages WHERE senderid = $1', [userId]);
 
     for (const message of messages) {
       const messageId = message.id;
-      const messageImageUrl = message.imageUrl; // Assuming 'imageUrl' is the correct casing from DB
+      const messageImageUrl = message.imageurl; // Assuming 'imageUrl' is the correct casing from DB
 
       // 2. Fetch reactions for each message to get their IDs and videoURLs for Cloudinary deletion
-      const { rows: reactions } = await query('SELECT id, "videoUrl" FROM reactions WHERE "messageId" = $1', [messageId]);
+      const { rows: reactions } = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
       const reactionIds = reactions.map(r => r.id);
-      const reactionVideoUrls = reactions.map(r => r.videoUrl).filter(url => url); // Assuming 'videoUrl' and filter nulls
+      const reactionVideoUrls = reactions.map(r => r.videourl).filter(url => url); // Assuming 'videoUrl' and filter nulls
 
       // 3. Delete replies associated with these reactions (if any reactionIds)
       if (reactionIds.length > 0) {
-        await query('DELETE FROM replies WHERE "reactionId" = ANY($1::uuid[])', [reactionIds]);
+        await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
       }
 
       // 4. Delete reactions associated with the message
-      await query('DELETE FROM reactions WHERE "messageId" = $1', [messageId]);
+      await query('DELETE FROM reactions WHERE messageid = $1', [messageId]);
       
       // 5. Delete the message itself
       await query('DELETE FROM messages WHERE id = $1', [messageId]);
