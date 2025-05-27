@@ -17,7 +17,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
   // Ensure all fields required by the client or for display are included
   const { id, name, email, picture, last_login, role, created_at, blocked } = user; // Use asserted user
 
-  res.json({
+  return res.json({
     id,
     name,
     email,

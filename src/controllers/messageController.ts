@@ -55,25 +55,23 @@ export const sendMessage = (req: Request, res: Response) => {
       return;
     }
 
-    // Authorization check
-    // requireAuth ensures req.user is present. If not, it would have already sent a 401.
-    // So, we can safely assert req.user here if the logic proceeds past requireAuth.
-    if (!req.user) {
-        // This should ideally not be reached if requireAuth is effective.
-        res.status(401).json({ error: 'User not authenticated for sendMessage authorization.' });
-        return;
+    // New Role-Based Authorization Check
+    if (!req.user) { 
+      // Should be caught by requireAuth, but as a safeguard or if requireAuth is somehow bypassed.
+      res.status(401).json({ error: 'Authentication required to send messages.' });
+      return;
     }
-    const user = req.user as AppUser; // Changed User to AppUser
 
-    const allowedEmails = ['danobrooks@gmail.com', 'dan@normal.ninja'];
-    if (user.email && !allowedEmails.includes(user.email)) { // Use asserted user
-      res.status(403).json({ error: 'You are not authorized to send messages.' });
+    const user = req.user as AppUser; // Assert type to access role
+
+    if (user.role === 'guest') {
+      res.status(403).json({ error: 'Guests are not authorized to send messages. Please wait for admin approval.' });
       return;
     }
 
     try {
       const { content, passcode } = req.body;
-      const senderId = user.id; // Use asserted user
+      const senderId = user.id; // Use user.id from the asserted user
       if (!content) {
         res.status(400).json({ error: 'Message content is required' });
         return;
@@ -257,7 +255,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       };
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       ...message,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
@@ -458,7 +456,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       verified: true,
       message: {
         id: message.id,
@@ -516,7 +514,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Reaction recorded successfully',
       reactionId: inserted[0].id
@@ -799,7 +797,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       videoUrl: videoUrl, // ensure videoUrl is passed in response
