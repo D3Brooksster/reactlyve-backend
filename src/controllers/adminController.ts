@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
+import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
+import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
 // import { deleteFromCloudinary } from './messageController'; // Not exported, so cannot be directly used
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -16,7 +17,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
   // Ensure all fields required by the client or for display are included
   const { id, name, email, picture, last_login, role, created_at, blocked } = user; // Use asserted user
 
-  res.json({
+  return res.json({
     id,
     name,
     email,

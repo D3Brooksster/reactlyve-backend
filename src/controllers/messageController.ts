@@ -8,10 +8,11 @@ import crypto from 'crypto';
 import "dotenv/config";
 import { AppUser } from '../entity/User'; // Changed User to AppUser
 import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
+import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
-// Cloudinary setup
+// Cloudinary setup - Kept for other functions that might directly use 'cloudinary' object
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -44,103 +45,6 @@ const generateShareableLink = (): string => {
   const baseUrl = process.env.FRONTEND_URL || '';
   const uniqueId = crypto.randomBytes(8).toString('hex');
   return `${baseUrl}/m/${uniqueId}`;
-};
-
-const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const url = new URL(cloudinaryUrl);
-      const pathname = url.pathname; // e.g., /<cloud_name>/<resource_type>/upload/v<version>/<folder>/<public_id_with_ext>
-
-      const pathSegments = pathname.split('/').filter(segment => segment); // remove empty segments
-
-      // Minimum structure: /<cloud_name>/<resource_type>/<delivery_type>/<public_id_part>
-      // Example: /mycloud/image/upload/file.jpg  (length 4)
-      if (pathSegments.length < 4) { 
-        return reject(new Error('Invalid Cloudinary URL: Path too short. Needs at least cloud_name, resource_type, delivery_type, and public_id part.'));
-      }
-
-      // pathSegments[0] = <cloud_name> (e.g. "mycloud")
-      // pathSegments[1] = <resource_type> (e.g. "image", "video")
-      // pathSegments[2] = <delivery_type> (e.g. "upload", "fetch")
-      // pathSegments[3:] = parts that make up the public_id, potentially including a version string.
-
-      const resource_type = pathSegments[1];
-      if (!['image', 'video', 'raw'].includes(resource_type)) {
-        return reject(new Error(`Invalid resource_type: '${resource_type}'. Must be 'image', 'video', or 'raw'.`));
-      }
-
-      // For deletion, delivery_type is usually "upload". We could validate pathSegments[2] if needed.
-      // const delivery_type = pathSegments[2];
-      // if (delivery_type !== 'upload') {
-      //   return reject(new Error(`Invalid delivery_type: '${delivery_type}'. Expected 'upload'.`));
-      // }
-
-      const startIndexAfterUpload = 3; // Public ID parts start after cloud_name/resource_type/delivery_type
-      const potentialPublicIdParts = pathSegments.slice(startIndexAfterUpload);
-
-      if (potentialPublicIdParts.length === 0) {
-        return reject(new Error('No segments found for public_id after cloud_name/resource_type/delivery_type.'));
-      }
-
-      // Filter out the version segment (e.g., "v1234567890") from these parts.
-      // The version segment can be anywhere within these parts.
-      let versionSegmentFound = false;
-      const publicIdPathParts = potentialPublicIdParts.filter(segment => {
-        if (segment.match(/^v\d+$/)) {
-          versionSegmentFound = true;
-          return false; // Exclude version segment
-        }
-        return true; // Keep other segments
-      });
-
-      // Note: Cloudinary URLs typically always have a version, even if it's v1.
-      // If no version string is explicitly found, all parts are considered part of the public_id.
-      // This behavior is implicitly handled by the filter above. If `versionSegmentFound` is useful for logging, it can be kept.
-
-      if (publicIdPathParts.length === 0) {
-        return reject(new Error('Public ID path parts array is empty after filtering version segment (if any).'));
-      }
-
-      const publicIdWithExtension = publicIdPathParts.join('/');
-      
-      // Remove the file extension from the last part of publicIdWithExtension
-      const lastDotIndex = publicIdWithExtension.lastIndexOf('.');
-      // Ensure dot is not the first character and an extension exists.
-      const public_id = (lastDotIndex > 0 && lastDotIndex < publicIdWithExtension.length -1) 
-                        ? publicIdWithExtension.substring(0, lastDotIndex) 
-                        : publicIdWithExtension;
-
-      if (!public_id) { // Should not happen if publicIdPathParts was not empty.
-        return reject(new Error('Public ID became empty after attempting to remove extension.'));
-      }
-      
-      console.log(`Attempting to delete from Cloudinary: public_id='${public_id}', resource_type='${resource_type}'`);
-
-      cloudinary.uploader.destroy(public_id, { resource_type: resource_type }, (error, result) => {
-        if (error) {
-          console.error('Error deleting from Cloudinary:', error);
-          return reject(error);
-        }
-        if (result && result.result !== 'ok' && result.result !== 'not found') {
-            console.warn('Cloudinary deletion warning:', result);
-            // We can choose to reject or resolve based on the 'result.result'
-            // For now, let's consider 'not found' as a successful deletion for idempotency.
-            // Other non-'ok' results could be actual issues.
-             if (result.result === 'not found') {
-                console.log(`Asset with public_id '${public_id}' not found on Cloudinary. Considered as deleted.`);
-                return resolve(result);
-            }
-            return reject(new Error(`Cloudinary deletion failed: ${result.result}`));
-        }
-        console.log('Successfully deleted from Cloudinary or asset was not found:', result);
-        resolve(result);
-      });
-    } catch (error) {
-      console.error('Failed to parse Cloudinary URL or other unexpected error:', error);
-      reject(error);
-    }
-  });
 };
 
 // === Controllers ===
@@ -353,7 +257,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       };
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       ...message,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
@@ -554,7 +458,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       verified: true,
       message: {
         id: message.id,
@@ -612,7 +516,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Reaction recorded successfully',
       reactionId: inserted[0].id
@@ -895,7 +799,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       videoUrl: videoUrl, // ensure videoUrl is passed in response
