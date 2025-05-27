@@ -129,16 +129,16 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         const offset = (page - 1) * limit;
     
         // Fetch counts
-        const countResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1', [senderId]);
+        const countResult = await query('SELECT COUNT(*) FROM messages WHERE senderid = $1', [senderId]);
         const totalMessages = parseInt(countResult.rows[0]?.count || '0', 10);
     
-        const viewedResult = await query('SELECT COUNT(*) FROM messages WHERE senderId = $1 AND viewed = true', [senderId]);
+        const viewedResult = await query('SELECT COUNT(*) FROM messages WHERE senderid = $1 AND viewed = true', [senderId]);
         const viewedMessages = parseInt(viewedResult.rows[0]?.count || '0', 10);
     
         const reactionResult = await query(
           `SELECT COUNT(*) FROM reactions r
-           INNER JOIN messages m ON r.messageId = m.id
-           WHERE m.senderId = $1`,
+           INNER JOIN messages m ON r.messageid = m.id
+           WHERE m.senderid = $1`,
           [senderId]
         );
         const totalReactions = parseInt(reactionResult.rows[0]?.count || '0', 10);
@@ -147,7 +147,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         const { rows: messages } = await query(
           `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat
            FROM messages 
-           WHERE senderId = $1 
+           WHERE senderid = $1 
            ORDER BY createdAt DESC 
            LIMIT $2 OFFSET $3`,
           [senderId, limit, offset]
@@ -162,7 +162,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
           const { rows: reactions } = await query(
             `SELECT id, messageid, name, createdat
              FROM reactions
-             WHERE messageId = ANY($1::uuid[])`,
+             WHERE messageid = ANY($1::uuid[])`,
             [messageIds]
           );
     
@@ -239,7 +239,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       console.error('Failed to mark message as viewed:', err);
     });
 
-    const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageId = $1 ORDER BY createdAt ASC', [id]);
+    const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdAt ASC', [id]);
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
@@ -289,7 +289,7 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     }
 
     // Fetch all reactions for the message to get their IDs and videoUrls
-    const reactionsResult = await query('SELECT id, videourl FROM reactions WHERE messageId = $1', [messageId]);
+    const reactionsResult = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
     const reactionsToDelete = reactionsResult.rows; // Array of { id: reactionId, videourl: videoUrl }
 
     if (reactionsToDelete.length === 0) {
@@ -303,11 +303,11 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     // Delete associated replies for all fetched reactions
     // Using ANY($1::uuid[]) for potentially better performance if many reaction IDs
     if (reactionIds.length > 0) {
-      await query('DELETE FROM replies WHERE reactionId = ANY($1::uuid[])', [reactionIds]);
+      await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
     }
     
     // Delete all reactions associated with the messageId
-    await query('DELETE FROM reactions WHERE messageId = $1', [messageId]);
+    await query('DELETE FROM reactions WHERE messageid = $1', [messageId]);
 
     // Attempt to delete associated videos from Cloudinary
     let cloudinaryDeletionsFailed = false;
@@ -362,7 +362,7 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
 
     // Database Deletion (Order is Important)
     // 1. Delete associated replies
-    await query('DELETE FROM replies WHERE reactionId = $1', [reactionId]);
+    await query('DELETE FROM replies WHERE reactionid = $1', [reactionId]);
 
     // 2. Delete the reaction itself
     await query('DELETE FROM reactions WHERE id = $1', [reactionId]);
@@ -650,12 +650,12 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     // For each reaction found, delete its associated replies
     for (const reaction of reactions) {
       if (reaction.id) {
-        await query('DELETE FROM replies WHERE reactionId = $1', [reaction.id]);
+        await query('DELETE FROM replies WHERE reactionid = $1', [reaction.id]);
       }
     }
 
     // Delete all reactions associated with the messageId
-    await query('DELETE FROM reactions WHERE messageId = $1', [messageId]);
+    await query('DELETE FROM reactions WHERE messageid = $1', [messageId]);
 
     // Delete the message itself
     await query('DELETE FROM messages WHERE id = $1', [messageId]);
@@ -817,7 +817,7 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
     const { rows } = await query(
       `SELECT id, videourl, thumbnailurl, duration, createdat, updatedat 
        FROM reactions 
-       WHERE messageId = $1 
+       WHERE messageid = $1 
        ORDER BY createdAt ASC`,
       [messageId]
     );
