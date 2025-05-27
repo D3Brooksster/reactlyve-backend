@@ -1,10 +1,11 @@
-export interface User {
+export interface AppUser { // Renamed from User to AppUser
   id: string;            // UUID string
   google_id?: string;
   email: string;
   name: string;
   picture?: string;
-  role: 'user' | 'admin';
+  last_login?: Date;
+  role: 'user' | 'admin' | 'guest';
   blocked: boolean;
   created_at: Date;
   updated_at: Date;

@@ -6,6 +6,8 @@ import { dbConfig } from './config/database.config';
 import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
+import userProfileRoutes from './routes/userProfileRoutes';
+import adminRoutes from './routes/adminRoutes';
 
 const app = express();
 
@@ -39,7 +41,9 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 app.use('/api/auth', authRoutes);
-app.use('/api', messageRoutes);
+app.use('/api', messageRoutes); // Assuming this is for general messages, e.g. /api/messages
+app.use('/api/profile', userProfileRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get(
   "/",
