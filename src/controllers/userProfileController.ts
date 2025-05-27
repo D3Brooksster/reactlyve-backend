@@ -46,12 +46,12 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
 
     for (const message of messages) {
       const messageId = message.id;
-      const messageImageUrl = message.imageUrl; // Corrected casing from 'imageurl'
+      const messageImageUrl = message.imageurl; // Corrected casing from 'imageurl'
 
       // 2. Fetch reactions for each message to get their IDs and videoURLs for Cloudinary deletion
       const { rows: reactions } = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
       const reactionIds = reactions.map(r => r.id);
-      const reactionVideoUrls = reactions.map(r => r.videoUrl).filter(url => url); // Corrected casing and filter nulls
+      const reactionVideoUrls = reactions.map(r => r.videourl).filter(url => url); // Corrected casing and filter nulls
 
       // 3. Delete replies associated with these reactions (if any reactionIds)
       if (reactionIds.length > 0) {
