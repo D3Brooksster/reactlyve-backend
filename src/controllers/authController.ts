@@ -10,7 +10,7 @@ export const generateToken = (user: AppUser):string => { // Changed User to AppU
         throw new Error('JWT_SECRET is not defined in environment variables.');
     }
       return jwt.sign({ id: user.id }, secret as jwt.Secret, {
-        expiresIn: expiresIn,
+        expiresIn: expiresIn as any,
     });
 
 };

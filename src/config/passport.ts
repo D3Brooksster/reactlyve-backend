@@ -4,7 +4,8 @@ import { query } from './database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
 
 // Serialize (store user ID in session)
-passport.serializeUser<AppUser, string>((user, done) => {
+passport.serializeUser<any, any>((user: AppUser, done) => {
+  // @ts-ignore
   done(null, user.id);
 });
 
