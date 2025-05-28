@@ -25,7 +25,9 @@ app.use(
 app.use(passport.initialize());
 
 app.use((req, res, next) => {
-  console.log('Incoming request:', req.method, req.originalUrl);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Incoming request:', req.method, req.originalUrl);
+  }
   next();
 });
 
