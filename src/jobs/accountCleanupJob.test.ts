@@ -80,6 +80,7 @@ describe('deleteInactiveAccounts', () => {
       name: 'Inactive User',
       last_login: getDateMonthsAgo(13),
       created_at: getDateMonthsAgo(14),
+      updated_at: new Date(), // Added
       picture: 'http://cloudinary.com/user-1-pic.jpg',
       role: 'user',
       blocked: false,
@@ -132,6 +133,7 @@ describe('deleteInactiveAccounts', () => {
       name: 'Old User',
       last_login: undefined, // Never logged in
       created_at: getDateMonthsAgo(13), // Account created 13 months ago
+      updated_at: new Date(), // Added
       picture: undefined,
       role: 'user',
       blocked: false,
@@ -160,17 +162,19 @@ describe('deleteInactiveAccounts', () => {
   });
 
   test('Test Case 4: Active user is not deleted', async () => {
-    const activeUser: AppUser = {
+    const activeUser: AppUser = { // This object needs to conform to AppUser for type safety at compile time
       id: 'user-3',
       email: 'active@example.com',
       name: 'Active User',
       last_login: getDateMonthsAgo(1), // Logged in 1 month ago
       created_at: getDateMonthsAgo(14),
+      updated_at: new Date(), // Added
       picture: undefined,
       role: 'user',
       blocked: false,
     };
     // The global query should filter this user out based on the WHERE clause in the actual function
+    // So, even though 'activeUser' is defined, it's not "used" in the deletion logic path.
     mockGlobalQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
     await deleteInactiveAccounts();
@@ -186,6 +190,7 @@ describe('deleteInactiveAccounts', () => {
       name: 'Cloudinary Fail',
       last_login: getDateMonthsAgo(13),
       created_at: getDateMonthsAgo(14),
+      updated_at: new Date(), // Added
       picture: 'http://cloudinary.com/user-4-pic.jpg',
       role: 'user',
       blocked: false,
@@ -228,6 +233,7 @@ describe('deleteInactiveAccounts', () => {
       name: 'DB Fail User',
       last_login: getDateMonthsAgo(13),
       created_at: getDateMonthsAgo(14),
+      updated_at: new Date(), // Added
       picture: 'http://cloudinary.com/user-5-pic.jpg', // Will be called before DB error
       role: 'user',
       blocked: false,

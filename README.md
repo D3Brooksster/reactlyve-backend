@@ -1,63 +1,136 @@
-# Project Title (Reactly App Backend - Assuming)
+# Reactlye Backend
 
-A brief description of the project.
+This is the backend service for the Reactlye application, providing API endpoints for user authentication, messaging, profile management, and administrative tasks. It features Google OAuth 2.0 integration, a robust messaging system with media support via Cloudinary, and user role management.
 
 ## Features
 
-*   User authentication (Google OAuth)
-*   Messaging functionality
-*   User profiles
-*   Admin panel
-*   Etc.
+*   **Authentication:**
+    *   Google OAuth 2.0 for user sign-up and login.
+    *   JWT (JSON Web Tokens) for securing API access.
+*   **User Management:**
+    *   User roles: `user`, `admin`, `guest`.
+    *   Users can view their profile and delete their own account.
+*   **Messaging System:**
+    *   Send text messages.
+    *   Upload and send image and video messages (stored on Cloudinary).
+    *   Shareable message links (with optional passcode protection).
+    *   Video reactions to messages.
+    *   Text replies to messages/reactions.
+*   **Admin Panel:**
+    *   View all registered users.
+    *   Update user roles.
+    *   Remove users from the system.
+*   **Automated Jobs:**
+    *   Daily cleanup of inactive user accounts (and their associated data, including Cloudinary assets) after 12 months of inactivity.
 
 ## Getting Started
 
 ### Prerequisites
 
-*   Node.js
-*   npm or yarn
-*   PostgreSQL
-*   Cloudinary Account
+*   Node.js (LTS version recommended, e.g., v18.x or v20.x)
+*   PostgreSQL (e.g., version 12 or higher)
+*   A Cloudinary account for media storage.
 
 ### Installation
 
-1.  Clone the repository:
+1.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
-    cd <repository-name>
+    git clone <your-repository-url>
     ```
-2.  Install dependencies:
+2.  **Navigate to the project directory:**
+    ```bash
+    cd reactlye-backend 
+    ```
+    (Or the actual name of the directory if different)
+3.  **Install dependencies:**
     ```bash
     npm install
     ```
-3.  Set up environment variables:
-    Create a `.env` file in the root directory and populate it with necessary configuration (database credentials, Cloudinary keys, JWT secrets, etc.). Refer to `.env.example` if available.
-    ```env
-    DATABASE_HOST=localhost
-    DATABASE_PORT=5432
-    DATABASE_NAME=your_db_name
-    DATABASE_USER=your_db_user
-    DATABASE_PASSWORD=your_db_password
-    CLOUDINARY_CLOUD_NAME=your_cloud_name
-    CLOUDINARY_API_KEY=your_api_key
-    CLOUDINARY_API_SECRET=your_api_secret
-    JWT_SECRET=your_jwt_secret
-    PORT=3000
-    # Add other variables as needed
-    ```
-4.  Run database migrations (if applicable). The project includes a migration for adding `last_login` to the `users` table (`migrations/V1__add_last_login_to_users.sql`). Tools like Flyway or node-pg-migrate can be used.
+
+### Database Setup
+
+1.  **Ensure PostgreSQL is running** and you have access to create a database and user.
+2.  **Create a database** for the application (e.g., `reactlye_db`).
+3.  **Set up the database schema:**
+    *   The initial database schema (tables like users, messages, etc.) can be set up using the `migration.sql` file located in the project root. This file should be executed against your newly created database.
+        ```bash
+        psql -U your_postgres_user -d your_database_name -f migration.sql
+        ```
+    *   The project also uses incremental migrations located in the `migrations/` directory. For example, `migrations/V1__add_last_login_to_users.sql` adds the `last_login` column to the `users` table. These should be applied in order after the base schema.
+    *   *Note:* For a more robust migration management system, consider integrating tools like Flyway or `node-pg-migrate` if not already implicitly used. The current setup requires manual application or a custom script.
 
 ### Running the Application
 
-*   **Development:**
+*   **Development Mode:**
+    The application uses `ts-node-dev` for live reloading during development.
     ```bash
     npm run dev
     ```
-*   **Production:**
-    ```bash
-    npm run build
-    npm start
-    ```
+    This will typically start the server on the port specified in your `.env` file (e.g., 3000).
+
+*   **Production Mode:**
+    1.  Build the TypeScript code:
+        ```bash
+        npm run build
+        ```
+        This compiles the TypeScript files into JavaScript in the `dist/` directory.
+    2.  Start the server:
+        ```bash
+        npm start
+        ```
+
+## Configuration (Environment Variables)
+
+Create a `.env` file in the root directory of the project and populate it with the following variables:
+
+```env
+# Server Configuration
+PORT=3000
+NODE_ENV=development # or 'production'
+
+# Database Configuration
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=your_database_name # e.g., reactlye_db
+DATABASE_USER=your_postgres_user
+DATABASE_PASSWORD=your_postgres_password
+
+# Google OAuth 2.0 Credentials
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback # Adjust if your port or path differs
+
+# Cloudinary Credentials
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+
+# Application URLs
+FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
+JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
+```
+
+**Note:** Ensure `GOOGLE_CALLBACK_URL` matches the redirect URI configured in your Google Cloud Console for the OAuth client.
+
+## API Endpoints
+
+The API provides several route groups for different functionalities:
+
+*   **`/api/auth`**: Handles user authentication.
+    *   Google login initiation and callback.
+    *   Fetching current authenticated user details.
+*   **`/api/messages`** (and related routes for reactions/replies): Manages the messaging system.
+    *   Creating, retrieving, updating, and deleting messages.
+    *   Managing message reactions and replies.
+*   **`/api/profile`**: User profile operations.
+    *   Viewing user's own profile.
+    *   Deleting user's own account.
+*   **`/api/admin`**: Admin-specific operations.
+    *   Listing users.
+    *   Modifying user roles.
+    *   Removing users.
+
+For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
 
 ## Scheduled Tasks
 
@@ -79,14 +152,36 @@ This section describes automated jobs that run as part of the application.
     *   The core logic for the job is implemented in `src/jobs/accountCleanupJob.ts`.
     *   The job is scheduled using `node-cron` within the main application file `src/index.ts`.
 
-## API Endpoints
+## Project Structure
 
-(Details about API endpoints would go here)
+A brief overview of key directories within the `src/` folder:
+
+*   `src/config`: Contains configuration files, such as database connection settings (`database.config.ts`) and Passport.js strategy setup (`passport.ts`).
+*   `src/controllers`: Houses the controller functions that handle incoming API requests, process data, and send responses.
+*   `src/entity`: Defines data models or interfaces (e.g., `AppUser.ts`) representing the structure of data entities.
+*   `src/jobs`: Includes modules for scheduled tasks or background jobs, like the `accountCleanupJob.ts`.
+*   `src/middlewares`: Contains custom middleware functions used in the request-response cycle (e.g., for authentication, authorization, error handling).
+*   `src/routes`: Defines the API routes and maps them to controller functions.
+*   `src/utils`: Utility functions and helper modules (e.g., `cloudinaryUtils.ts` for Cloudinary interactions).
+*   `migrations/`: Contains SQL migration files for evolving the database schema over time.
+
+## Running Tests
+
+The project is set up with Jest for unit and integration testing.
+
+To run the tests:
+
+```bash
+npm test
+```
+
+This command will execute all test files (typically `*.test.ts` or `*.spec.ts`) found in the project. Ensure your test environment is configured correctly (e.g., separate test database if needed, environment variables for tests).
 
 ## Contributing
 
-(Guidelines for contributing to the project)
+(Placeholder: Guidelines for contributing to the project would go here. e.g., coding standards, branch strategy, pull request process)
 
 ## License
 
-(Project license information, e.g., ISC as per package.json)
+This project is licensed under the ISC License (as per `package.json`).
+```

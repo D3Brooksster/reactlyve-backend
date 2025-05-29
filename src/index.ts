@@ -71,7 +71,6 @@ app.listen(process.env.PORT, async () => {
       console.error('Scheduled job: deleteInactiveAccounts encountered an error:', error);
     }
   }, {
-    scheduled: true,
     timezone: "UTC" // Explicitly setting UTC, can be adjusted as needed
   });
   console.log('Inactive account cleanup job scheduled to run daily at midnight UTC.');
