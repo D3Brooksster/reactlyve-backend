@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
+import { 
+  // deleteFromCloudinary, // Keep if needed elsewhere, or remove if fully replaced
+  extractPublicIdAndResourceType, 
+  deleteMultipleFromCloudinary 
+} from '../utils/cloudinaryUtils';
 // import { deleteFromCloudinary } from './messageController'; // Not exported, so cannot be directly used
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -40,59 +44,104 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
   try {
     await query('BEGIN', []);
 
-    // 1. Fetch all messages by the user to get their IDs and imageURLs for Cloudinary deletion
-    const { rows: messages } = await query('SELECT id, imageurl FROM messages WHERE senderid = $1', [userId]);
+    // 1. Fetch all message IDs and imageURLs by the user
+    const { rows: messages } = await query(
+      'SELECT id, imageurl FROM messages WHERE senderid = $1',
+      [userId]
+    );
 
-    for (const message of messages) {
-      const messageId = message.id;
-      const messageImageUrl = message.imageurl; // Corrected casing from 'imageurl'
+    let allMessageIds: string[] = [];
+    let allMessageImageUrls: string[] = [];
 
-      // 2. Fetch reactions for each message to get their IDs and videoURLs for Cloudinary deletion
-      const { rows: reactions } = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
-      const reactionIds = reactions.map(r => r.id);
-      const reactionVideoUrls = reactions.map(r => r.videourl).filter(url => url); // Corrected casing and filter nulls
+    if (messages.length > 0) {
+      allMessageIds = messages.map(m => m.id);
+      allMessageImageUrls = messages.map(m => m.imageurl).filter(url => url);
 
-      // 3. Delete replies associated with these reactions (if any reactionIds)
-      if (reactionIds.length > 0) {
-        await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
+      // 2. Fetch all reaction IDs and videoURLs associated with the user's messages
+      const { rows: reactions } = await query(
+        'SELECT id, videourl FROM reactions WHERE messageid = ANY($1::uuid[])',
+        [allMessageIds]
+      );
+
+      let allReactionIds: string[] = [];
+      let allReactionVideoUrls: string[] = [];
+
+      if (reactions.length > 0) {
+        allReactionIds = reactions.map(r => r.id);
+        allReactionVideoUrls = reactions.map(r => r.videourl).filter(url => url);
+
+        // 3. Delete replies associated with these reactions
+        if (allReactionIds.length > 0) {
+          await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [allReactionIds]);
+        }
+
+        // 4. Delete reactions associated with the messages
+        // This must happen AFTER deleting replies due to foreign key constraints
+        await query('DELETE FROM reactions WHERE id = ANY($1::uuid[])', [allReactionIds]);
       }
-
-      // 4. Delete reactions associated with the message
-      // This must happen AFTER deleting replies due to foreign key constraints
-      await query('DELETE FROM reactions WHERE messageid = $1', [messageId]);
       
-      // 5. Delete the message itself
+      // 5. Delete the messages themselves
       // This must happen AFTER deleting reactions
-      await query('DELETE FROM messages WHERE id = $1', [messageId]);
+      await query('DELETE FROM messages WHERE id = ANY($1::uuid[])', [allMessageIds]);
 
       // 6. Cloudinary Deletion
-      if (messageImageUrl) {
+      const imagePublicIds: string[] = [];
+      allMessageImageUrls.forEach(url => {
+        const extracted = extractPublicIdAndResourceType(url);
+        // Ensure resource_type is 'image' if that's a strict requirement for this array
+        if (extracted && extracted.resource_type === 'image') { 
+          imagePublicIds.push(extracted.public_id);
+        } else if (extracted) {
+          // Log if a messageImageUrl doesn't yield an image resource_type
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`Expected image resource type but got ${extracted.resource_type} for URL: ${url}`);
+          }
+        }
+      });
+
+      const videoPublicIds: string[] = [];
+      allReactionVideoUrls.forEach(url => {
+        const extracted = extractPublicIdAndResourceType(url);
+        // Ensure resource_type is 'video'
+        if (extracted && extracted.resource_type === 'video') {
+          videoPublicIds.push(extracted.public_id);
+        } else if (extracted) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`Expected video resource type but got ${extracted.resource_type} for URL: ${url}`);
+          }
+        }
+      });
+
+      if (imagePublicIds.length > 0) {
         try {
-          console.log(`Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
-          await deleteFromCloudinary(messageImageUrl);
-          console.log(`Successfully deleted message image: ${messageImageUrl}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Attempting to bulk delete ${imagePublicIds.length} images from Cloudinary.`);
+          }
+          await deleteMultipleFromCloudinary(imagePublicIds, 'image');
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Successfully initiated bulk deletion for ${imagePublicIds.length} images.`);
+          }
         } catch (cloudinaryError) {
-          console.error(`Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
-          // Do not re-throw, allow the process to continue
+          console.error(`Failed to bulk delete images from Cloudinary:`, cloudinaryError);
         }
       }
 
-      for (const videoUrl of reactionVideoUrls) {
-        if (videoUrl) {
-          try {
-            console.log(`Attempting to delete reaction video from Cloudinary: ${videoUrl}`);
-            await deleteFromCloudinary(videoUrl);
-            console.log(`Successfully deleted reaction video: ${videoUrl}`);
-          } catch (cloudinaryError) {
-            console.error(`Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
-            // Do not re-throw, allow the process to continue
+      if (videoPublicIds.length > 0) {
+        try {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Attempting to bulk delete ${videoPublicIds.length} videos from Cloudinary.`);
           }
+          await deleteMultipleFromCloudinary(videoPublicIds, 'video');
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Successfully initiated bulk deletion for ${videoPublicIds.length} videos.`);
+          }
+        } catch (cloudinaryError) {
+          console.error(`Failed to bulk delete videos from Cloudinary:`, cloudinaryError);
         }
       }
     }
 
     // 7. Delete the user record from the users table
-    // This should be one of the last steps
     await query('DELETE FROM users WHERE id = $1', [userId]);
 
     await query('COMMIT', []);
