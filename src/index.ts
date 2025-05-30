@@ -9,6 +9,10 @@ import messageRoutes from './routes/messageRoutes';
 import userProfileRoutes from './routes/userProfileRoutes';
 import adminRoutes from './routes/adminRoutes';
 
+// Import for cron job
+import cron from 'node-cron';
+import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
+
 const app = express();
 
 app.use(express.json());
@@ -56,4 +60,18 @@ app.get(
 
 app.listen(process.env.PORT, async () => {
   console.log(`Server listening on port ${process.env.PORT} in ${process.env.NODE_ENV}`);
+
+  // Schedule the inactive account cleanup job
+  cron.schedule('0 0 * * *', async () => {
+    console.log('Running scheduled job: deleteInactiveAccounts at midnight');
+    try {
+      await deleteInactiveAccounts();
+      console.log('Scheduled job: deleteInactiveAccounts completed successfully.');
+    } catch (error) {
+      console.error('Scheduled job: deleteInactiveAccounts encountered an error:', error);
+    }
+  }, {
+    timezone: "UTC" // Explicitly setting UTC, can be adjusted as needed
+  });
+  console.log('Inactive account cleanup job scheduled to run daily at midnight UTC.');
 });
