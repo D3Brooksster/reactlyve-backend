@@ -70,8 +70,19 @@ export const sendMessage = (req: Request, res: Response) => {
     }
 
     try {
-      const { content, passcode } = req.body;
+      const { content, passcode, reaction_length } = req.body; // Extract reaction_length
       const senderId = user.id; // Use user.id from the asserted user
+
+      // Validate reaction_length
+      let validatedReactionLength = 15; // Default value
+      if (reaction_length !== undefined) {
+        const parsedReactionLength = parseInt(reaction_length as string, 10);
+        if (!isNaN(parsedReactionLength) && parsedReactionLength >= 10 && parsedReactionLength <= 30) {
+          validatedReactionLength = parsedReactionLength;
+        }
+        // Optional: else if (sendErrorOnInvalid) res.status(400).json({ error: 'Invalid reaction_length' }); return;
+      }
+
       if (!content) {
         res.status(400).json({ error: 'Message content is required' });
         return;
@@ -88,9 +99,9 @@ export const sendMessage = (req: Request, res: Response) => {
       const shareableLink = generateShareableLink();
 
       const { rows } = await query(
-        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType]
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength]
       );
 
       const message = rows[0];
@@ -101,6 +112,7 @@ export const sendMessage = (req: Request, res: Response) => {
         imageUrl: message.imageurl,
         mediaType: message.mediatype,
         shareableLink: message.shareablelink,
+        reactionLength: message.reaction_length, // Add reaction_length to response
         createdAt: new Date(message.createdat).toISOString(),
         updatedAt: new Date(message.updatedat).toISOString()
       });
@@ -145,7 +157,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length
            FROM messages 
            WHERE senderid = $1 
            ORDER BY createdat DESC 
@@ -257,6 +269,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
 
     res.status(200).json({
       ...message,
+      reaction_length: message.reaction_length, // Ensure reaction_length is in the response
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
       reactions: reactionsWithReplies
@@ -411,7 +424,12 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
     const hasPasscode = !!message.passcode;
 
     if (hasPasscode) {
-      res.status(200).json({ id: message.id, hasPasscode: true, createdAt: new Date(message.createdat).toISOString() });
+      res.status(200).json({
+        id: message.id,
+        hasPasscode: true,
+        reaction_length: message.reaction_length, // Add reaction_length
+        createdAt: new Date(message.createdat).toISOString()
+      });
       return;
     }
 
@@ -420,6 +438,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       content: message.content,
       imageUrl: message.imageurl,
       hasPasscode: false,
+      reaction_length: message.reaction_length, // Add reaction_length
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
