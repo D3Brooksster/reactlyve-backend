@@ -50,7 +50,13 @@ const upload = multer({
 // Cloudinary utility functions uploadVideoToCloudinary and uploadToCloudinarymedia moved to utils/cloudinaryUtils.ts
 
 // === Routes ===
-router.post('/messages/send', requireAuth, sendMessage);
+const sendMessageRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // Limit each IP to 10 requests per windowMs
+  message: 'Too many requests, please try again later.',
+});
+
+router.post('/messages/send', requireAuth, sendMessageRateLimiter, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
 router.get('/messages/:id', getMessageById);
 router.put('/messages/:id', requireAuth, updateMessage); // Added PUT route for updating messages
