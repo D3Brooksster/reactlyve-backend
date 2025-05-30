@@ -20,6 +20,7 @@ import {
   deleteAllReactionsForMessage
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 // Readable import removed as functions using it are moved
@@ -64,6 +65,12 @@ router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
-router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteAllReactionsForMessage);
+const deleteReactionsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // Limit each IP to 10 requests per windowMs
+  message: 'Too many requests, please try again later.',
+});
+
+router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteReactionsRateLimiter, deleteAllReactionsForMessage);
 
 export default router;
