@@ -170,7 +170,7 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
     return;
   } catch (error) {
     await query('ROLLBACK', []);
-    console.error(`Error deleting user ${userId}:`, error);
+    console.error('Error deleting user %s:', userId, error);
     // Check for specific error types if needed, e.g., foreign key violation if something was missed
     res.status(500).json({ error: 'Failed to delete user and their associated data due to an internal error.' });
     return;
