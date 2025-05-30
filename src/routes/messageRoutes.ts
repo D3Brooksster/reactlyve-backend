@@ -52,7 +52,7 @@ const upload = multer({
 // === Routes ===
 const sendMessageRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // Limit each IP to 10 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests, please try again later.',
 });
 
@@ -72,20 +72,20 @@ router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 const deleteReactionRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // Limit each IP to 10 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests, please try again later.',
 });
 
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionRateLimiter, deleteReactionById);
 const deleteReactionsRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // Limit each IP to 10 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests, please try again later.',
 });
 
 const deleteAllReactionsRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // Limit each IP to 10 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests, please try again later.',
 });
 
