@@ -64,7 +64,13 @@ router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
-router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
+const deleteReactionRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // Limit each IP to 10 requests per windowMs
+  message: 'Too many requests, please try again later.',
+});
+
+router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionRateLimiter, deleteReactionById);
 const deleteReactionsRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 10, // Limit each IP to 10 requests per windowMs
