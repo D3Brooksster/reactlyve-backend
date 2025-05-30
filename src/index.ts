@@ -14,6 +14,7 @@ import cron from 'node-cron';
 import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
 
 const app = express();
+app.set('trust proxy', true);
 
 app.use(express.json());
 
