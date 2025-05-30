@@ -7,8 +7,8 @@ import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { uploadToCloudinarymedia, uploadVideoToCloudinary } from '../routes/messageRoutes';
-import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
+import { deleteFromCloudinary, uploadToCloudinarymedia, uploadVideoToCloudinary } from '../utils/cloudinaryUtils';
+// Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
@@ -279,6 +279,110 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error('Error fetching message:', error);
     res.status(500).json({ error: 'Failed to get message' });
+    return;
+  }
+};
+
+// === Update Message ===
+export const updateMessage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { passcode, reaction_length } = req.body;
+
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required to update messages.' });
+      return;
+    }
+
+    const user = req.user as AppUser;
+
+    // Fetch the message
+    const messageResult = await query('SELECT * FROM messages WHERE id = $1', [id]);
+    if (messageResult.rows.length === 0) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+
+    const message = messageResult.rows[0];
+
+    // Verify ownership
+    if (message.senderid !== user.id) {
+      res.status(403).json({ error: 'Forbidden: You can only update your own messages' });
+      return;
+    }
+
+    // Validate reaction_length
+    let validatedReactionLength: number | undefined;
+    if (reaction_length !== undefined) {
+      const parsedReactionLength = parseInt(reaction_length as string, 10);
+      if (isNaN(parsedReactionLength) || parsedReactionLength < 10 || parsedReactionLength > 30) {
+        res.status(400).json({ error: 'Invalid reaction_length. Must be an integer between 10 and 30.' });
+        return;
+      }
+      validatedReactionLength = parsedReactionLength;
+    }
+
+    // Ensure at least one field is being updated
+    if (passcode === undefined && validatedReactionLength === undefined) {
+      res.status(400).json({ error: 'At least one field (passcode or reaction_length) must be provided for update.' });
+      return;
+    }
+
+    // Prepare SQL query
+    const updateFields: string[] = [];
+    const queryParams: any[] = [];
+    let paramIndex = 1;
+
+    if (passcode !== undefined) {
+      updateFields.push(`passcode = $${paramIndex++}`);
+      queryParams.push(passcode === null ? null : passcode);
+    }
+
+    if (validatedReactionLength !== undefined) {
+      updateFields.push(`reaction_length = $${paramIndex++}`);
+      queryParams.push(validatedReactionLength);
+    }
+
+    if (updateFields.length === 0) {
+      // This case should ideally be caught by the check above, but as a safeguard:
+      res.status(400).json({ error: 'No valid fields provided for update.' });
+      return;
+    }
+
+    updateFields.push(`updatedat = NOW()`);
+
+    const updateQuery = `UPDATE messages SET ${updateFields.join(', ')} WHERE id = $${paramIndex++} AND senderid = $${paramIndex++} RETURNING *`;
+    queryParams.push(id, user.id);
+
+    // Execute update query
+    const { rows: updatedRows, rowCount } = await query(updateQuery, queryParams);
+
+    if (rowCount === 0) {
+      // This could happen if the senderid condition fails despite earlier checks (e.g., race condition or if the message was deleted)
+      // Or if the ID itself was not found in this atomic operation.
+      res.status(404).json({ error: 'Message not found or update failed due to ownership mismatch.' });
+      return;
+    }
+
+    const updatedMessage = updatedRows[0];
+
+    res.status(200).json({
+      id: updatedMessage.id,
+      senderId: updatedMessage.senderid,
+      content: updatedMessage.content,
+      imageUrl: updatedMessage.imageurl,
+      mediaType: updatedMessage.mediatype,
+      shareableLink: updatedMessage.shareablelink,
+      passcode: updatedMessage.passcode,
+      reactionLength: updatedMessage.reaction_length,
+      createdAt: new Date(updatedMessage.createdat).toISOString(),
+      updatedAt: new Date(updatedMessage.updatedat).toISOString(),
+    });
+    return;
+
+  } catch (error) {
+    console.error('Error updating message:', error);
+    res.status(500).json({ error: 'Failed to update message' });
     return;
   }
 };
@@ -829,7 +933,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 };
 
-export const getReactionsByMessageId = async (req: Request, res: Response): Promise<void> => {
+export const getReactionsByMessageId = async (req: Request, res: Response): Promise<void> => { // Ensure this function is not duplicated or malformed
   const { messageId } = req.params;
 
   try {
