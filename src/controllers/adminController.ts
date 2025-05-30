@@ -79,7 +79,7 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     res.json(formattedUser);
     return;
   } catch (error) {
-    console.error(`Error updating role for user ${userId}:`, error);
+    console.error('Error updating role for user %s:', userId, error);
     res.status(500).json({ error: 'Failed to update user role.' });
     return;
   }
