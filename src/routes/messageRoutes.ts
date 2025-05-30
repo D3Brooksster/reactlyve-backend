@@ -20,7 +20,6 @@ import {
   deleteAllReactionsForMessage
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
-import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 // Readable import removed as functions using it are moved
@@ -50,13 +49,8 @@ const upload = multer({
 // Cloudinary utility functions uploadVideoToCloudinary and uploadToCloudinarymedia moved to utils/cloudinaryUtils.ts
 
 // === Routes ===
-const sendMessageRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.',
-});
 
-router.post('/messages/send', requireAuth, sendMessageRateLimiter, sendMessage);
+router.post('/messages/send', requireAuth, sendMessage);
 router.get('/messages', requireAuth, getAllMessages);
 router.get('/messages/:id', getMessageById);
 router.put('/messages/:id', requireAuth, updateMessage); // Added PUT route for updating messages
@@ -70,25 +64,7 @@ router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
-const deleteReactionRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.',
-});
-
-router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionRateLimiter, deleteReactionById);
-const deleteReactionsRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.',
-});
-
-const deleteAllReactionsRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.',
-});
-
-router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteAllReactionsRateLimiter, deleteAllReactionsForMessage);
+router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
+router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteAllReactionsForMessage);
 
 export default router;
