@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import dotenv from 'dotenv';
 import { URL } from 'url'; // Ensure URL is imported if not globally available
+import { Readable } from 'stream'; // Added Readable
 
 dotenv.config(); // Ensure environment variables are loaded
 
@@ -104,6 +105,72 @@ export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
   });
 };
 
+// === Cloudinary upload utilities ===
+// Moved from messageRoutes.ts to break circular dependency
+
+export const uploadVideoToCloudinary = (buffer: Buffer): Promise<{ secure_url: string; duration: number }> => {
+  return new Promise((resolve, reject) => {
+    console.log('Buffer size:', buffer.length);
+    if (buffer.length === 0) return reject(new Error('Empty buffer received'));
+
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'video',
+        folder: 'reactions',
+        format: 'mp4',
+        transformation: [
+          { quality: 'auto' },
+          { fetch_format: 'auto' }
+        ]
+      },
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary error:', error);
+          return reject(error);
+        }
+
+        const secure_url = result?.secure_url || '';
+        let duration = 0;
+        if (result && typeof result.duration === 'number') {
+          duration = Math.round(result.duration);
+        } else if (result && result.video && typeof result.video.duration === 'number') {
+          duration = Math.round(result.video.duration);
+        }
+
+        resolve({ secure_url, duration });
+      }
+    );
+
+    Readable.from(buffer).pipe(stream);
+  });
+};
+
+export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'image' | 'video'): Promise<string> => {
+  try {
+    const base64Data = buffer.toString('base64');
+    const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
+    const dataUri = `${prefix}${base64Data}`;
+
+    const result = await new Promise<any>((resolve, reject) => {
+      cloudinary.uploader.upload(
+        dataUri,
+        {
+          resource_type: resourceType,
+          folder: 'messages',
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+    });
+
+    return result.secure_url;
+  } catch (error) {
+    console.error('Cloudinary upload error:', error);
+    throw new Error('Failed to upload file to Cloudinary');
+  }
+};
 export const deleteMultipleFromCloudinary = (publicIds: string[], resourceType: 'image' | 'video' | 'raw' = 'image'): Promise<any> => {
   return new Promise((resolve, reject) => {
     if (!publicIds || publicIds.length === 0) {
