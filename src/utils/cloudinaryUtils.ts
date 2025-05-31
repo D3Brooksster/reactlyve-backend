@@ -119,6 +119,7 @@ export const uploadVideoToCloudinary = (buffer: Buffer, folder: string = 'reacti
         folder: folder,
         format: 'mp4',
         transformation: [
+          { width: 1280, crop: "limit" }, // Limit width to 1280px, maintain aspect ratio
           { quality: 'auto' },
           { fetch_format: 'auto' }
         ]
