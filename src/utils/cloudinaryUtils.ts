@@ -12,6 +12,15 @@ cloudinary.config({
 });
 
 export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_id: string; resource_type: 'image' | 'video' | 'raw' } | null => {
+  if (typeof cloudinaryUrl !== 'string' || !cloudinaryUrl.includes('cloudinary.com')) {
+    if (typeof cloudinaryUrl !== 'string') {
+      console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
+    } else {
+      console.log(`Attempted to extract public ID from non-Cloudinary URL: ${cloudinaryUrl}`);
+    }
+    return null;
+  }
+
   try {
     const url = new URL(cloudinaryUrl);
     const pathname = url.pathname;
@@ -70,6 +79,18 @@ export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_
 
 export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
   return new Promise((resolve, reject) => {
+    try {
+      const url = new URL(cloudinaryUrl);
+      if (!url.hostname.includes('cloudinary.com')) {
+        console.log(`Skipping deletion for non-Cloudinary URL: ${cloudinaryUrl}`);
+        return resolve({ message: "Skipped non-Cloudinary URL" });
+      }
+    } catch (error) {
+      // If URL parsing fails, it's definitely not a valid Cloudinary URL for our purposes
+      console.warn(`Invalid URL provided to deleteFromCloudinary: ${cloudinaryUrl}`, error);
+      return resolve({ message: "Skipped invalid URL" });
+    }
+
     const extracted = extractPublicIdAndResourceType(cloudinaryUrl);
     if (!extracted) {
       return reject(new Error(`Failed to extract public_id or resource_type from URL: ${cloudinaryUrl}`));
