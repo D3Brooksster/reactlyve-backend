@@ -108,20 +108,30 @@ export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
 // === Cloudinary upload utilities ===
 // Moved from messageRoutes.ts to break circular dependency
 
-export const uploadVideoToCloudinary = (buffer: Buffer): Promise<{ secure_url: string; duration: number }> => {
+export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder: string = 'reactions'): Promise<{ secure_url: string; duration: number }> => {
   return new Promise((resolve, reject) => {
-    console.log('Buffer size:', buffer.length);
+    console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
+
+    let transformation_options;
+    const TEN_MB = 10 * 1024 * 1024;
+
+    if (fileSize < TEN_MB) {
+      transformation_options = [{ fetch_format: 'auto' }];
+    } else {
+      transformation_options = [
+        { width: 1280, crop: "limit" },
+        { quality: 'auto' },
+        { fetch_format: 'auto' }
+      ];
+    }
 
     const stream = cloudinary.uploader.upload_stream(
       {
         resource_type: 'video',
-        folder: 'reactions',
-        format: 'mp4',
-        transformation: [
-          { quality: 'auto' },
-          { fetch_format: 'auto' }
-        ]
+        folder: folder,
+        eager_async: true,
+        eager: transformation_options
       },
       (error, result) => {
         if (error) {

@@ -59,7 +59,7 @@ app.get(
   }
 );
 
-app.listen(process.env.PORT, async () => {
+const server = app.listen(process.env.PORT, async () => {
   console.log(`Server listening on port ${process.env.PORT} in ${process.env.NODE_ENV}`);
 
   // Schedule the inactive account cleanup job
@@ -76,3 +76,4 @@ app.listen(process.env.PORT, async () => {
   });
   console.log('Inactive account cleanup job scheduled to run daily at midnight UTC.');
 });
+server.setTimeout(300000); // 300,000 milliseconds = 5 minutes

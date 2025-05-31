@@ -21,7 +21,7 @@ cloudinary.config({
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
     allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Invalid file type'));
@@ -93,15 +93,23 @@ export const sendMessage = (req: Request, res: Response) => {
 
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
-        mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image' | 'video');
+        if (mediaType === 'video') {
+          // The problem description mentions that uploadVideoToCloudinary will be updated
+          // to accept a folder argument. We are assuming it's the second argument.
+          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
+          mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
+        } else {
+          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
+        }
       }
 
       const shareableLink = generateShareableLink();
+      const mediaSize = req.file ? req.file.size : null;
 
       const { rows } = await query(
-        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength]
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize]
       );
 
       const message = rows[0];
@@ -111,6 +119,7 @@ export const sendMessage = (req: Request, res: Response) => {
         content: message.content,
         imageUrl: message.imageurl,
         mediaType: message.mediatype,
+        mediaSize: message.media_size,
         shareableLink: message.shareablelink,
         reactionLength: message.reaction_length, // Add reaction_length to response
         createdAt: new Date(message.createdat).toISOString(),
@@ -157,7 +166,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size
            FROM messages 
            WHERE senderid = $1 
            ORDER BY createdat DESC 
@@ -194,6 +203,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         // Format messages with attached reactions
         const formattedMessages = messages.map(msg => ({
           ...msg,
+          mediaSize: msg.media_size,
           reactions: reactionMap[msg.id] || [],
           createdAt: new Date(msg.createdat).toISOString(),
           updatedAt: new Date(msg.updatedat).toISOString()
@@ -270,6 +280,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     res.status(200).json({
       ...message,
       reaction_length: message.reaction_length, // Ensure reaction_length is in the response
+      mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
       reactions: reactionsWithReplies
@@ -372,6 +383,7 @@ export const updateMessage = async (req: Request, res: Response): Promise<void> 
       content: updatedMessage.content,
       imageUrl: updatedMessage.imageurl,
       mediaType: updatedMessage.mediatype,
+      mediaSize: updatedMessage.media_size,
       shareableLink: updatedMessage.shareablelink,
       passcode: updatedMessage.passcode,
       reactionLength: updatedMessage.reaction_length,
@@ -543,6 +555,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       imageUrl: message.imageurl,
       hasPasscode: false,
       reaction_length: message.reaction_length, // Add reaction_length
+      mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
@@ -587,6 +600,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         imageUrl: message.imageurl,
         hasPasscode: true,
         passcodeVerified: true,
+        mediaSize: message.media_size,
         createdAt: new Date(message.createdat).toISOString()
       }
     });
@@ -615,7 +629,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
 
     const messageId = rows[0].id;
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
@@ -900,7 +914,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
