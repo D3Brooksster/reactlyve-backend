@@ -21,7 +21,7 @@ cloudinary.config({
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
     allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Invalid file type'));
@@ -93,7 +93,14 @@ export const sendMessage = (req: Request, res: Response) => {
 
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
-        mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image' | 'video');
+        if (mediaType === 'video') {
+          // The problem description mentions that uploadVideoToCloudinary will be updated
+ভিং// to accept a folder argument. We are assuming it's the second argument.
+          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, 'messages');
+          mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
+        } else {
+          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
+        }
       }
 
       const shareableLink = generateShareableLink();

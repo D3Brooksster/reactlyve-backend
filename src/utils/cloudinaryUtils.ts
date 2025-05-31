@@ -108,7 +108,7 @@ export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
 // === Cloudinary upload utilities ===
 // Moved from messageRoutes.ts to break circular dependency
 
-export const uploadVideoToCloudinary = (buffer: Buffer): Promise<{ secure_url: string; duration: number }> => {
+export const uploadVideoToCloudinary = (buffer: Buffer, folder: string = 'reactions'): Promise<{ secure_url: string; duration: number }> => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -116,7 +116,7 @@ export const uploadVideoToCloudinary = (buffer: Buffer): Promise<{ secure_url: s
     const stream = cloudinary.uploader.upload_stream(
       {
         resource_type: 'video',
-        folder: 'reactions',
+        folder: folder,
         format: 'mp4',
         transformation: [
           { quality: 'auto' },
