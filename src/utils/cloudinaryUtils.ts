@@ -12,12 +12,19 @@ cloudinary.config({
 });
 
 export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_id: string; resource_type: 'image' | 'video' | 'raw' } | null => {
-  if (typeof cloudinaryUrl !== 'string' || !cloudinaryUrl.includes('cloudinary.com')) {
-    if (typeof cloudinaryUrl !== 'string') {
-      console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
-    } else {
-      console.log(`Attempted to extract public ID from non-Cloudinary URL: ${cloudinaryUrl}`);
+  const allowedHosts = ['res.cloudinary.com'];
+  try {
+    const url = new URL(cloudinaryUrl);
+    if (typeof cloudinaryUrl !== 'string' || !allowedHosts.includes(url.host)) {
+      if (typeof cloudinaryUrl !== 'string') {
+        console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
+      } else {
+        console.log(`Attempted to extract public ID from non-Cloudinary URL: ${cloudinaryUrl}`);
+      }
+      return null;
     }
+  } catch (error) {
+    console.error(`Failed to parse URL for host validation: ${cloudinaryUrl}`, { error });
     return null;
   }
 
