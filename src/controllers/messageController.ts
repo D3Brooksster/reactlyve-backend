@@ -96,7 +96,7 @@ export const sendMessage = (req: Request, res: Response) => {
         if (mediaType === 'video') {
           // The problem description mentions that uploadVideoToCloudinary will be updated
           // to accept a folder argument. We are assuming it's the second argument.
-          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, 'messages');
+          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
           mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
         } else {
           mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
