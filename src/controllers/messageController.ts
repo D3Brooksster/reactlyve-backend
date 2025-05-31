@@ -622,7 +622,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
 
     const messageId = rows[0].id;
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
@@ -907,7 +907,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer);
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
