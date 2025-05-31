@@ -130,8 +130,9 @@ export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder
       {
         resource_type: 'video',
         folder: folder,
-        format: 'mp4',
-        transformation: transformation_options
+        format: 'mp4', // Kept as per instruction, though f_auto might make it redundant
+        eager_async: true,
+        eager: transformation_options
       },
       (error, result) => {
         if (error) {
