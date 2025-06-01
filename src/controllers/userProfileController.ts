@@ -2,10 +2,9 @@ import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
 import { 
-  // deleteFromCloudinary, // Keep if needed elsewhere, or remove if fully replaced
-  extractPublicIdAndResourceType, 
-  deleteMultipleFromCloudinary 
-} from '../utils/cloudinaryUtils';
+  extractKeyFromS3Url,
+  deleteMultipleFromS3
+} from '../utils/s3Utils';
 // import { deleteFromCloudinary } from './messageController'; // Not exported, so cannot be directly used
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -84,59 +83,44 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
       // This must happen AFTER deleting reactions
       await query('DELETE FROM messages WHERE id = ANY($1::uuid[])', [allMessageIds]);
 
-      // 6. Cloudinary Deletion
-      const imagePublicIds: string[] = [];
+      // 6. S3 Deletion
+      const allObjectKeysToDelete: string[] = [];
       allMessageImageUrls.forEach(url => {
-        const extracted = extractPublicIdAndResourceType(url);
-        // Ensure resource_type is 'image' if that's a strict requirement for this array
-        if (extracted && extracted.resource_type === 'image') { 
-          imagePublicIds.push(extracted.public_id);
-        } else if (extracted) {
-          // Log if a messageImageUrl doesn't yield an image resource_type
+        const key = extractKeyFromS3Url(url);
+        if (key) {
+          allObjectKeysToDelete.push(key);
+        } else {
           if (process.env.NODE_ENV === 'development') {
-            console.warn(`Expected image resource type but got ${extracted.resource_type} for URL: ${url}`);
+            console.warn(`Could not extract S3 key from message image URL: ${url}`);
           }
         }
       });
 
-      const videoPublicIds: string[] = [];
       allReactionVideoUrls.forEach(url => {
-        const extracted = extractPublicIdAndResourceType(url);
-        // Ensure resource_type is 'video'
-        if (extracted && extracted.resource_type === 'video') {
-          videoPublicIds.push(extracted.public_id);
-        } else if (extracted) {
+        const key = extractKeyFromS3Url(url);
+        if (key) {
+          allObjectKeysToDelete.push(key);
+        } else {
           if (process.env.NODE_ENV === 'development') {
-            console.warn(`Expected video resource type but got ${extracted.resource_type} for URL: ${url}`);
+            console.warn(`Could not extract S3 key from reaction video URL: ${url}`);
           }
         }
       });
 
-      if (imagePublicIds.length > 0) {
+      if (allObjectKeysToDelete.length > 0) {
         try {
           if (process.env.NODE_ENV === 'development') {
-            console.log(`Attempting to bulk delete ${imagePublicIds.length} images from Cloudinary.`);
+            console.log(`Attempting to bulk delete ${allObjectKeysToDelete.length} objects from S3.`);
           }
-          await deleteMultipleFromCloudinary(imagePublicIds, 'image');
+          // The deleteMultipleFromS3 function internally handles logging of partial failures.
+          await deleteMultipleFromS3(allObjectKeysToDelete);
           if (process.env.NODE_ENV === 'development') {
-            console.log(`Successfully initiated bulk deletion for ${imagePublicIds.length} images.`);
+            console.log(`Successfully initiated bulk deletion for ${allObjectKeysToDelete.length} objects from S3.`);
           }
-        } catch (cloudinaryError) {
-          console.error(`Failed to bulk delete images from Cloudinary:`, cloudinaryError);
-        }
-      }
-
-      if (videoPublicIds.length > 0) {
-        try {
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`Attempting to bulk delete ${videoPublicIds.length} videos from Cloudinary.`);
-          }
-          await deleteMultipleFromCloudinary(videoPublicIds, 'video');
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`Successfully initiated bulk deletion for ${videoPublicIds.length} videos.`);
-          }
-        } catch (cloudinaryError) {
-          console.error(`Failed to bulk delete videos from Cloudinary:`, cloudinaryError);
+        } catch (s3Error) {
+          // This catch block might be for errors in the deleteMultipleFromS3 call itself,
+          // not for individual object deletion failures, which are logged by the utility.
+          console.error(`Failed to initiate bulk delete from S3:`, s3Error);
         }
       }
     }

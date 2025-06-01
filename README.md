@@ -12,7 +12,7 @@ This is the backend service for the Reactlye application, providing API endpoint
     *   Users can view their profile and delete their own account.
 *   **Messaging System:**
     *   Send text messages.
-    *   Upload and send image and video messages (stored on Cloudinary).
+    *   Upload and send image and video messages (stored on S3-compatible storage).
     *   Shareable message links (with optional passcode protection).
     *   Video reactions to messages.
     *   Text replies to messages/reactions.
@@ -101,9 +101,9 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback # Adjust if your port or path differs
 
 # Cloudinary Credentials
-CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
-CLOUDINARY_API_KEY=your_cloudinary_api_key
-CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+# CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name (No longer primary, S3 is used)
+# CLOUDINARY_API_KEY=your_cloudinary_api_key
+# CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
 # Application URLs
 FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
@@ -111,6 +111,60 @@ JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
 ```
 
 **Note:** Ensure `GOOGLE_CALLBACK_URL` matches the redirect URI configured in your Google Cloud Console for the OAuth client.
+
+## Media Storage Configuration (S3)
+
+The application now uses S3-compatible storage for media files (images and videos) instead of Cloudinary.
+
+### Environment Variables for S3
+
+Ensure the following environment variables are set in your `.env` file:
+
+*   `S3_ACCESS_KEY_ID`: Your S3 provider's Access Key ID.
+*   `S3_SECRET_ACCESS_KEY`: Your S3 provider's Secret Access Key.
+*   `S3_REGION`: The AWS region of your S3 bucket (e.g., `us-east-1`, `eu-west-2`). For non-AWS S3-compatible services, this might still be required or have a specific value.
+*   `S3_BUCKET_NAME`: The name of your S3 bucket.
+*   `S3_ENDPOINT`: The full URL endpoint for your S3-compatible service (e.g., `https://your-minio-server.com`, `https://s3.your-region.backblazeb2.com`).
+    *   For AWS S3, this can often be omitted, and the SDK will use the default regional endpoint.
+    *   This is crucial for services like MinIO, Backblaze B2, Cloudflare R2, etc.
+
+The S3 client in this application is configured with `s3ForcePathStyle: true`. This setting uses path-style URLs (e.g., `ENDPOINT/BUCKET_NAME/object/key.jpg`) which is often necessary for S3-compatible services. AWS S3 typically defaults to virtual-hosted style URLs (e.g., `BUCKET_NAME.s3.REGION.amazonaws.com/object/key.jpg`) but also supports path-style.
+
+### Migrating from Cloudinary
+
+If you were previously using Cloudinary with this application, migrating your existing media to S3 is a manual process. Here are the general steps:
+
+1.  **Choose an S3 Provider**: Select an S3-compatible storage provider (e.g., AWS S3, MinIO, Backblaze B2, Cloudflare R2, etc.).
+2.  **Set Up S3 Bucket**: Create a new bucket with your chosen provider and obtain the necessary access credentials (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ENDPOINT`).
+3.  **Download and Upload Assets**:
+    *   Use tools like `rclone` (recommended for its versatility with various cloud storage providers) to transfer assets.
+    *   Alternatively, check if Cloudinary offers export features or use custom scripts to download your media from Cloudinary and then upload it to your S3 bucket.
+4.  **Maintain Object Key Structure**:
+    *   If possible, try to maintain the same object key structure (file paths and names) in S3 as you had in Cloudinary (public IDs).
+    *   If the structure changes, you will need a clear mapping to update any stored URLs or references in your database.
+5.  **Update Database References**:
+    *   The application now uses S3 object keys for operations like deletion. If your database stores full Cloudinary URLs, these URLs will need to be processed to extract the S3 object key (potentially using the `extractKeyFromS3Url` utility provided in the application, assuming the key part of the URL matches the S3 object key) before they can be used with the new S3 deletion functions.
+    *   Consider if a one-time script is needed to update stored media URLs in your database to reflect their new S3 locations or to store S3 object keys directly.
+
+### Media Transformations
+
+*   **Images**: When images are uploaded using the `uploadToS3Media` function, they are automatically processed by the `sharp` library and converted to WebP format with 80% quality before being stored in S3.
+*   **Videos**:
+    *   Video transformations (like specific resizing, quality adjustments, or format changes that Cloudinary might have provided via `eager` transformations) are **not** automatically applied by the `uploadVideoToS3` function. Videos are uploaded as-is.
+    *   If advanced video processing is required, you would need to:
+        *   Integrate a library like `ffmpeg` (or a Node.js wrapper for it) into your application to process videos before uploading them to S3.
+        *   Alternatively, use a separate post-processing service that triggers after S3 upload.
+    *   The `uploadVideoToS3` function currently returns a placeholder value (`0`) for video duration. Accurate duration extraction would also require a library like `ffmpeg` or `ffprobe` to inspect the video before or after upload.
+
+### S3 Utility Functions
+
+The core S3 interaction logic is encapsulated in `src/utils/s3Utils.ts`. Key functions include:
+
+*   `uploadToS3Media`: Handles uploads for general media (images are converted to WebP, videos are uploaded as-is to a 'messages' folder).
+*   `uploadVideoToS3`: Specifically handles video uploads (as-is) to a specified folder (defaults to 'reactions') and returns a placeholder for duration.
+*   `deleteFromS3`: Deletes a single object from S3 given its object key. Handles 'NoSuchKey' errors gracefully.
+*   `deleteMultipleFromS3`: Deletes multiple objects from S3 given an array of object keys. Logs partial failures but attempts to delete all specified keys.
+*   `extractKeyFromS3Url`: A utility to parse an S3 URL and extract the object key, considering various URL formats (path-style, virtual-hosted, custom endpoints).
 
 ## API Endpoints
 
@@ -143,11 +197,11 @@ This section describes automated jobs that run as part of the application.
 *   **Data Deletion:** When an account is identified as inactive, the following data associated with the user is deleted:
     *   The user's account from the `users` table.
     *   All messages sent by the user from the `messages` table.
-        *   Any images associated with these messages stored on Cloudinary are also deleted.
+        *   Any images/videos associated with these messages stored on S3 are also deleted.
     *   All reactions made by the user from the `reactions` table.
-        *   Any videos associated with these reactions stored on Cloudinary are also deleted.
+        *   Any videos associated with these reactions stored on S3 are also deleted.
     *   All replies related to the user's reactions.
-    *   The user's profile picture, if stored on Cloudinary.
+    *   The user's profile picture, if stored on S3 (Note: profile picture handling might need specific review if it was also migrated to S3).
 *   **Technical Implementation:**
     *   The core logic for the job is implemented in `src/jobs/accountCleanupJob.ts`.
     *   The job is scheduled using `node-cron` within the main application file `src/index.ts`.
@@ -162,7 +216,7 @@ A brief overview of key directories within the `src/` folder:
 *   `src/jobs`: Includes modules for scheduled tasks or background jobs, like the `accountCleanupJob.ts`.
 *   `src/middlewares`: Contains custom middleware functions used in the request-response cycle (e.g., for authentication, authorization, error handling).
 *   `src/routes`: Defines the API routes and maps them to controller functions.
-*   `src/utils`: Utility functions and helper modules (e.g., `cloudinaryUtils.ts` for Cloudinary interactions).
+*   `src/utils`: Utility functions and helper modules (e.g., `s3Utils.ts` for S3 interactions, `cloudinaryUtils.ts` may still exist if not fully removed).
 *   `migrations/`: Contains SQL migration files for evolving the database schema over time.
 
 ## Running Tests

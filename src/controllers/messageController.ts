@@ -7,7 +7,12 @@ import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary, uploadToCloudinarymedia, uploadVideoToCloudinary } from '../utils/cloudinaryUtils';
+import {
+  deleteFromS3,
+  uploadToS3Media,
+  uploadVideoToS3,
+  extractKeyFromS3Url
+} from '../utils/s3Utils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -93,13 +98,22 @@ export const sendMessage = (req: Request, res: Response) => {
 
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
+        // Ensure originalname is available, otherwise generate a name
+        const fileName = req.file.originalname || `media-${uuidv4()}`;
         if (mediaType === 'video') {
-          // The problem description mentions that uploadVideoToCloudinary will be updated
-          // to accept a folder argument. We are assuming it's the second argument.
-          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
-          mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
+          const uploadResult = await uploadVideoToS3({
+            buffer: req.file.buffer,
+            fileName: fileName,
+            folder: 'messages'
+          });
+          mediaUrl = uploadResult.secure_url;
+          // Note: uploadResult.duration is available if needed
         } else {
-          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
+          mediaUrl = await uploadToS3Media({
+            buffer: req.file.buffer,
+            fileName: fileName,
+            resourceType: 'image'
+          });
         }
       }
 
@@ -443,13 +457,18 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     for (const reaction of reactionsToDelete) {
       if (reaction.videourl) {
         try {
-          console.log(`Attempting to delete reaction video from Cloudinary: ${reaction.videourl}`);
-          await deleteFromCloudinary(reaction.videourl);
-          console.log(`Successfully deleted reaction video: ${reaction.videourl}`);
-        } catch (cloudinaryError) {
-          cloudinaryDeletionsFailed = true;
-          console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
-          // Log error, but don't fail the entire operation
+          const objectKey = extractKeyFromS3Url(reaction.videourl);
+          if (objectKey) {
+            console.log(`Attempting to delete reaction video from S3: key='${objectKey}'`);
+            await deleteFromS3(objectKey);
+            console.log(`Successfully deleted reaction video from S3: key='${objectKey}'`);
+          } else {
+            console.warn(`Could not extract S3 key from reaction video URL: ${reaction.videourl}`);
+            // cloudinaryDeletionsFailed = true; // Consider if this flag is still needed or how to adapt it
+          }
+        } catch (s3Error) {
+          cloudinaryDeletionsFailed = true; // Adapt or rename this flag
+          console.error(`Failed to delete reaction video ${reaction.videourl} (key: ${extractKeyFromS3Url(reaction.videourl)}) from S3:`, s3Error);
         }
       }
     }
@@ -500,13 +519,18 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
     let cloudinaryDeletionFailed = false;
     if (reactionVideoUrl) {
       try {
-        console.log(`Attempting to delete reaction video from Cloudinary: ${reactionVideoUrl}`);
-        await deleteFromCloudinary(reactionVideoUrl);
-        console.log(`Successfully deleted reaction video: ${reactionVideoUrl}`);
-      } catch (cloudinaryError) {
-        cloudinaryDeletionFailed = true;
-        console.error(`Failed to delete reaction video ${reactionVideoUrl} from Cloudinary:`, cloudinaryError);
-        // Log error, but don't fail the entire operation
+        const objectKey = extractKeyFromS3Url(reactionVideoUrl);
+        if (objectKey) {
+          console.log(`Attempting to delete reaction video from S3: key='${objectKey}'`);
+          await deleteFromS3(objectKey);
+          console.log(`Successfully deleted reaction video from S3: key='${objectKey}'`);
+        } else {
+          console.warn(`Could not extract S3 key from reaction video URL: ${reactionVideoUrl}`);
+          // cloudinaryDeletionFailed = true; // Consider if this flag is still needed
+        }
+      } catch (s3Error) {
+        cloudinaryDeletionFailed = true; // Adapt or rename this flag
+        console.error(`Failed to delete reaction video ${reactionVideoUrl} (key: ${extractKeyFromS3Url(reactionVideoUrl)}) from S3:`, s3Error);
       }
     }
 
@@ -629,9 +653,16 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
 
     const messageId = rows[0].id;
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
-    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
-    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
+    const fileNameForReaction = req.file.originalname || `reaction-${uuidv4()}`;
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToS3({
+      buffer: req.file.buffer,
+      fileName: fileNameForReaction
+      // Default folder 'reactions' will be used
+    });
+    const thumbnailUrl = videoUrl; // S3 doesn't auto-generate thumbnails like Cloudinary might.
+                                 // This logic might need adjustment if actual thumbnails are required.
+                                 // For now, using video URL as placeholder if that was the old behavior.
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0;
 
     const queryText = `
       INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''})
@@ -801,26 +832,36 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     let cloudinaryDeletionsFailed = false;
     if (messageImageUrl) {
       try {
-        console.log(`Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
-        await deleteFromCloudinary(messageImageUrl);
-        console.log(`Successfully deleted message image: ${messageImageUrl}`);
-      } catch (cloudinaryError) {
-        cloudinaryDeletionsFailed = true;
-        console.error(`Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
-        // Log error, but don't fail the entire operation
+        const objectKey = extractKeyFromS3Url(messageImageUrl);
+        if (objectKey) {
+          console.log(`Attempting to delete message image from S3: key='${objectKey}'`);
+          await deleteFromS3(objectKey);
+          console.log(`Successfully deleted message image from S3: key='${objectKey}'`);
+        } else {
+          console.warn(`Could not extract S3 key from message image URL: ${messageImageUrl}`);
+          // cloudinaryDeletionsFailed = true; // Consider if this flag is still needed
+        }
+      } catch (s3Error) {
+        cloudinaryDeletionsFailed = true; // Adapt or rename this flag
+        console.error(`Failed to delete message image ${messageImageUrl} (key: ${extractKeyFromS3Url(messageImageUrl)}) from S3:`, s3Error);
       }
     }
 
     for (const reaction of reactions) {
       if (reaction.videourl) {
         try {
-          console.log(`Attempting to delete reaction video from Cloudinary: ${reaction.videourl}`);
-          await deleteFromCloudinary(reaction.videourl);
-          console.log(`Successfully deleted reaction video: ${reaction.videourl}`);
-        } catch (cloudinaryError) {
-          cloudinaryDeletionsFailed = true;
-          console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
-          // Log error, but don't fail the entire operation
+          const objectKey = extractKeyFromS3Url(reaction.videourl);
+          if (objectKey) {
+            console.log(`Attempting to delete reaction video from S3: key='${objectKey}'`);
+            await deleteFromS3(objectKey);
+            console.log(`Successfully deleted reaction video from S3: key='${objectKey}'`);
+          } else {
+            console.warn(`Could not extract S3 key from reaction video URL: ${reaction.videourl}`);
+            // cloudinaryDeletionsFailed = true; // Consider if this flag is still needed
+          }
+        } catch (s3Error) {
+          cloudinaryDeletionsFailed = true; // Adapt or rename this flag
+          console.error(`Failed to delete reaction video ${reaction.videourl} (key: ${extractKeyFromS3Url(reaction.videourl)}) from S3:`, s3Error);
         }
       }
     }
@@ -914,9 +955,14 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
-    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
-    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
+    const fileNameForUpload = req.file.originalname || `reaction-video-${uuidv4()}`;
+    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToS3({
+      buffer: req.file.buffer,
+      fileName: fileNameForUpload
+      // Default folder 'reactions' will be used by uploadVideoToS3
+    });
+    const thumbnailUrl = videoUrl; // Placeholder, S3 doesn't auto-generate thumbnails
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0;
 
     await query(
       `UPDATE reactions

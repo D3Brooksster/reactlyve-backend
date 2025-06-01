@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --files src/index.ts",
     "build": "tsc && cp ./package.json ./dist",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -15,11 +16,14 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.16",
+    "@types/sharp": "^0.32.0",
+    "aws-sdk": "^2.1692.0",
     "bcrypt": "^5.1.1",
     "cloudinary": "^2.6.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
     "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.0",
@@ -27,8 +31,8 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.15.6",
-    "uuid": "^11.1.0",
-    "express-rate-limit": "^7.5.0"
+    "sharp": "^0.34.2",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
