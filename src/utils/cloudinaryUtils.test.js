@@ -3,7 +3,7 @@ const { uploadToCloudinarymedia, uploadVideoToCloudinary } = require('./cloudina
 const cloudinaryNodeModule = require('cloudinary'); // Changed import
 // Note: { Readable } is NOT imported at the top level here
 
-const NEW_WORKING_OVERLAY_PARAMS_RAW = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.5,g_south_east,x_10,y_10";
+const NEW_WORKING_OVERLAY_PARAMS_RAW = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.3,g_south_east,x_10,y_10";
 const SMALL_FILE_VIDEO_OVERLAY_RAW = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;
 const LARGE_FILE_VIDEO_OVERLAY_RAW = "w_1280,c_limit,q_auto,f_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;
 const IMAGE_OVERLAY_RAW = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;

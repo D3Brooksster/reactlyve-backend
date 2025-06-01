@@ -3,7 +3,7 @@ const dotenv = require('dotenv');
 const { URL } = require('url');
 const { Readable } = require('stream');
 
-const NEW_WORKING_OVERLAY_PARAMS = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.5,g_south_east,x_10,y_10";
+const NEW_WORKING_OVERLAY_PARAMS = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.3,g_south_east,x_10,y_10";
 const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS;
 const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "w_1280,c_limit,q_auto,f_auto/" + NEW_WORKING_OVERLAY_PARAMS;
 const IMAGE_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS;
