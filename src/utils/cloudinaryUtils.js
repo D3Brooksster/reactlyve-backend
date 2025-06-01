@@ -3,6 +3,12 @@ const dotenv = require('dotenv');
 const { URL } = require('url');
 const { Readable } = require('stream');
 
+const NEW_WORKING_OVERLAY_PARAMS = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.3,g_south_east,x_10,y_10";
+const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS;
+const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "w_1280,c_limit,q_auto,f_auto/" + NEW_WORKING_OVERLAY_PARAMS;
+const IMAGE_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS;
+const JUST_THE_OVERLAY_TRANSFORMATION = "l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply"; // This might be unused or deprecated after this change
+
 dotenv.config();
 
 cloudinary.config({
@@ -121,17 +127,20 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
 
-    let videoTransformationOptions;
+    // let videoTransformationOptions; // No longer using separate base options here
     const TEN_MB = 10 * 1024 * 1024;
+    let combinedOverlayString;
 
     if (fileSize < TEN_MB) {
-      videoTransformationOptions = [{ fetch_format: 'auto' }];
+      // videoTransformationOptions = [{ fetch_format: 'auto' }];
+      combinedOverlayString = SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     } else {
-      videoTransformationOptions = [
-        { width: 1280, crop: "limit" },
-        { quality: 'auto' },
-        { fetch_format: 'auto' }
-      ];
+      // videoTransformationOptions = [
+      //   { width: 1280, crop: "limit" },
+      //   { quality: 'auto' },
+      //   { fetch_format: 'auto' }
+      // ];
+      combinedOverlayString = LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     }
 
     const thumbnailTransformation = {
@@ -143,25 +152,36 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
       quality: "auto"
     };
 
-    // Ensure eagerTransformations is an array and includes the thumbnail
-    let eagerTransformations = [];
-    if (Array.isArray(videoTransformationOptions)) {
-      eagerTransformations = [...videoTransformationOptions, thumbnailTransformation];
-    } else { // It's a single object
-      eagerTransformations = [videoTransformationOptions, thumbnailTransformation];
-    }
+    // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION }; // Not used in this approach
+    const mainVideoTransformation = { raw_transformation: combinedOverlayString };
+    const eagerTransformations = [mainVideoTransformation, thumbnailTransformation];
+
+    // if (Array.isArray(videoTransformationOptions)) { // Logic simplified
+    //   eagerTransformations = [...videoTransformationOptions, overlayStep, thumbnailTransformation];
+    // } else {
+    //   eagerTransformations = [videoTransformationOptions, overlayStep, thumbnailTransformation];
+    // }
 
     const stream = cloudinary.uploader.upload_stream(
       {
         resource_type: 'video',
         folder: folder,
-        eager_async: true,
+        eager_async: false,
         eager: eagerTransformations
       },
       (error, result) => {
         if (error) {
           console.error('Cloudinary error:', error);
           return reject(error);
+        }
+
+        if (result && result.eager && Array.isArray(result.eager)) {
+          console.log('[uploadVideoToCloudinary] Eager transformation results:');
+          result.eager.forEach((eager_result, index) => {
+            console.log(`  Eager[${index}] result object:`, eager_result);
+          });
+        } else if (result) {
+          console.log('[uploadVideoToCloudinary] No eager transformations found in result or result.eager is not an array. Result:', result);
         }
 
         const videoSecureUrl = result?.secure_url || '';
@@ -202,8 +222,16 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
       folder: 'messages',
     };
 
+    // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION }; // Not used in this approach
+
     if (resourceType === 'image') {
-      uploadOptions.eager = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+      // let imageEagerOptions = [{ fetch_format: 'auto' }, { quality: 'auto' }]; // Logic removed
+      // imageEagerOptions.push(overlayStep); // Logic removed
+      uploadOptions.eager = [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }];
+    } else if (resourceType === 'video') {
+      // let videoEagerOptions = [{ fetch_format: 'auto' }, { quality: 'auto' }]; // Logic removed
+      // videoEagerOptions.push(overlayStep); // Logic removed
+      uploadOptions.eager = [{ raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }];
     }
 
     const result = await new Promise((resolve, reject) => { // Removed 'any' type
@@ -212,7 +240,17 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
         uploadOptions,
         (error, result) => {
           if (error) reject(error);
-          else resolve(result);
+          else {
+            if (result && result.eager && Array.isArray(result.eager)) {
+              console.log('[uploadToCloudinarymedia] Eager transformation results:');
+              result.eager.forEach((eager_result, index) => {
+                console.log(`  Eager[${index}] result object:`, eager_result);
+              });
+            } else if (result) {
+              console.log('[uploadToCloudinarymedia] No eager transformations found in result or result.eager is not an array. Result:', result);
+            }
+            resolve(result);
+          }
         }
       );
     });
