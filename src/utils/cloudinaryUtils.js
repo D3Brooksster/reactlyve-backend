@@ -6,6 +6,7 @@ const { Readable } = require('stream');
 const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
 const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "w_1280,c_limit,q_auto,f_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
 const IMAGE_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const JUST_THE_OVERLAY_TRANSFORMATION = "l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
 
 dotenv.config();
 
@@ -127,18 +128,16 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
 
     let videoTransformationOptions;
     const TEN_MB = 10 * 1024 * 1024;
-    let overlayTransformationString;
+    // overlayTransformationString is no longer needed here as we use JUST_THE_OVERLAY_TRANSFORMATION directly
 
     if (fileSize < TEN_MB) {
       videoTransformationOptions = [{ fetch_format: 'auto' }];
-      overlayTransformationString = SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     } else {
       videoTransformationOptions = [
         { width: 1280, crop: "limit" },
         { quality: 'auto' },
         { fetch_format: 'auto' }
       ];
-      overlayTransformationString = LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     }
 
     const thumbnailTransformation = {
@@ -150,14 +149,13 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
       quality: "auto"
     };
 
-    // Ensure eagerTransformations is an array and includes the thumbnail
     let eagerTransformations = [];
-    const overlayTransformation = { raw_transformation: overlayTransformationString };
+    const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION };
 
     if (Array.isArray(videoTransformationOptions)) {
-      eagerTransformations = [...videoTransformationOptions, overlayTransformation, thumbnailTransformation];
-    } else { // It's a single object
-      eagerTransformations = [videoTransformationOptions, overlayTransformation, thumbnailTransformation];
+      eagerTransformations = [...videoTransformationOptions, overlayStep, thumbnailTransformation];
+    } else { // It's a single object (though current logic always makes it an array)
+      eagerTransformations = [videoTransformationOptions, overlayStep, thumbnailTransformation];
     }
 
     const stream = cloudinary.uploader.upload_stream(
@@ -211,16 +209,16 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
       folder: 'messages',
     };
 
+    const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION };
+
     if (resourceType === 'image') {
-      uploadOptions.eager = [
-        { fetch_format: 'auto' },
-        { quality: 'auto' },
-        { raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }
-      ];
+      let imageEagerOptions = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+      imageEagerOptions.push(overlayStep);
+      uploadOptions.eager = imageEagerOptions;
     } else if (resourceType === 'video') {
-      uploadOptions.eager = [
-        { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }
-      ];
+      let videoEagerOptions = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+      videoEagerOptions.push(overlayStep);
+      uploadOptions.eager = videoEagerOptions;
     }
 
     const result = await new Promise((resolve, reject) => { // Removed 'any' type
