@@ -166,7 +166,7 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
       {
         resource_type: 'video',
         folder: folder,
-        eager_async: false,
+        eager_async: true,
         eager: eagerTransformations
       },
       (error, result) => {
@@ -178,7 +178,7 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
         if (result && result.eager && Array.isArray(result.eager)) {
           console.log('[uploadVideoToCloudinary] Eager transformation results:');
           result.eager.forEach((eager_result, index) => {
-            console.log(`  Eager[${index}] result object:`, eager_result);
+            console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
           });
         } else if (result) {
           console.log('[uploadVideoToCloudinary] No eager transformations found in result or result.eager is not an array. Result:', result);
@@ -244,7 +244,7 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
             if (result && result.eager && Array.isArray(result.eager)) {
               console.log('[uploadToCloudinarymedia] Eager transformation results:');
               result.eager.forEach((eager_result, index) => {
-                console.log(`  Eager[${index}] result object:`, eager_result);
+                console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
               });
             } else if (result) {
               console.log('[uploadToCloudinarymedia] No eager transformations found in result or result.eager is not an array. Result:', result);
