@@ -3,10 +3,11 @@ const { uploadToCloudinarymedia, uploadVideoToCloudinary } = require('./cloudina
 const cloudinaryNodeModule = require('cloudinary'); // Changed import
 // Note: { Readable } is NOT imported at the top level here
 
-const SMALL_FILE_VIDEO_OVERLAY_RAW = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply"; // Will likely be deprecated by this change for main eager assertions
-const LARGE_FILE_VIDEO_OVERLAY_RAW = "w_1280,c_limit,q_auto,f_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply"; // Will likely be deprecated by this change for main eager assertions
-const IMAGE_OVERLAY_RAW = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply"; // Will likely be deprecated by this change for main eager assertions
-const JUST_THE_OVERLAY_RAW = "l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const NEW_WORKING_OVERLAY_PARAMS_RAW = "l_Reactlyve_Logo_bi78md/fl_layer_apply,w_0.5,g_south_east,x_10,y_10";
+const SMALL_FILE_VIDEO_OVERLAY_RAW = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;
+const LARGE_FILE_VIDEO_OVERLAY_RAW = "w_1280,c_limit,q_auto,f_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;
+const IMAGE_OVERLAY_RAW = "f_auto,q_auto/" + NEW_WORKING_OVERLAY_PARAMS_RAW;
+const JUST_THE_OVERLAY_RAW = "l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply"; // This should no longer be used by primary eager assertions
 
 jest.mock('cloudinary', () => {
   const originalCloudinary = jest.requireActual('cloudinary');
@@ -50,8 +51,8 @@ jest.mock('cloudinary', () => {
 
 describe('uploadToCloudinarymedia', () => {
   const mockBuffer = Buffer.from('test-image-buffer');
-  const commonMediaBaseTransforms = [{ fetch_format: 'auto' }, { quality: 'auto' }];
-  const overlayStep = { raw_transformation: JUST_THE_OVERLAY_RAW };
+  // const commonMediaBaseTransforms = [{ fetch_format: 'auto' }, { quality: 'auto' }]; // No longer used here
+  // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_RAW }; // No longer used here
 
 
   beforeEach(() => {
@@ -65,8 +66,8 @@ describe('uploadToCloudinarymedia', () => {
     expect(cloudinaryNodeModule.v2.uploader.upload).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload.mock.calls[0][1];
     expect(callOptions.resource_type).toBe('image');
-    expect(callOptions.eager).toEqual([...commonMediaBaseTransforms, overlayStep]);
-    expect(callOptions.eager.length).toBe(commonMediaBaseTransforms.length + 1);
+    expect(callOptions.eager).toEqual([{ raw_transformation: IMAGE_OVERLAY_RAW }]);
+    expect(callOptions.eager.length).toBe(1);
     expect(callOptions.folder).toBe('messages');
   });
 
@@ -75,8 +76,8 @@ describe('uploadToCloudinarymedia', () => {
     expect(cloudinaryNodeModule.v2.uploader.upload).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload.mock.calls[0][1];
     expect(callOptions.resource_type).toBe('video');
-    expect(callOptions.eager).toEqual([...commonMediaBaseTransforms, overlayStep]);
-    expect(callOptions.eager.length).toBe(commonMediaBaseTransforms.length + 1);
+    expect(callOptions.eager).toEqual([{ raw_transformation: SMALL_FILE_VIDEO_OVERLAY_RAW }]);
+    expect(callOptions.eager.length).toBe(1);
     expect(callOptions.folder).toBe('messages');
   });
 
@@ -131,28 +132,24 @@ describe('uploadVideoToCloudinary', () => {
     await uploadVideoToCloudinary(mockVideoBuffer, smallFileSize, defaultFolder);
     expect(cloudinaryNodeModule.v2.uploader.upload_stream).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload_stream.mock.calls[0][0];
-    const expectedSmallVideoBase = [{ fetch_format: 'auto' }];
-    const overlayStep = { raw_transformation: JUST_THE_OVERLAY_RAW };
+    const mainVideoTransformation = { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_RAW };
     expect(callOptions.eager).toEqual([
-      ...expectedSmallVideoBase,
-      overlayStep,
+      mainVideoTransformation,
       expectedThumbnailTransformation
     ]);
-    expect(callOptions.eager.length).toBe(expectedSmallVideoBase.length + 1 + 1);
+    expect(callOptions.eager.length).toBe(2);
   });
 
   test('should include correct eager transformations for large videos', async () => {
     await uploadVideoToCloudinary(mockVideoBuffer, largeFileSize, defaultFolder);
     expect(cloudinaryNodeModule.v2.uploader.upload_stream).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload_stream.mock.calls[0][0];
-    const expectedLargeVideoBase = [{ width: 1280, crop: "limit" }, { quality: 'auto' }, { fetch_format: 'auto' }];
-    const overlayStep = { raw_transformation: JUST_THE_OVERLAY_RAW };
+    const mainVideoTransformation = { raw_transformation: LARGE_FILE_VIDEO_OVERLAY_RAW };
     expect(callOptions.eager).toEqual([
-      ...expectedLargeVideoBase,
-      overlayStep,
+      mainVideoTransformation,
       expectedThumbnailTransformation
     ]);
-    expect(callOptions.eager.length).toBe(expectedLargeVideoBase.length + 1 + 1);
+    expect(callOptions.eager.length).toBe(2);
   });
 
   test('should resolve with secure_url, thumbnail_url, and duration', async () => {
