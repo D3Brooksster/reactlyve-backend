@@ -3,6 +3,10 @@ const { uploadToCloudinarymedia, uploadVideoToCloudinary } = require('./cloudina
 const cloudinaryNodeModule = require('cloudinary'); // Changed import
 // Note: { Readable } is NOT imported at the top level here
 
+const SMALL_FILE_VIDEO_OVERLAY_RAW = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const LARGE_FILE_VIDEO_OVERLAY_RAW = "w_1280,c_limit,q_auto,f_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const IMAGE_OVERLAY_RAW = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+
 jest.mock('cloudinary', () => {
   const originalCloudinary = jest.requireActual('cloudinary');
   const { Readable: FactoryScopedReadable } = require('stream');
@@ -57,16 +61,22 @@ describe('uploadToCloudinarymedia', () => {
     expect(cloudinaryNodeModule.v2.uploader.upload).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload.mock.calls[0][1];
     expect(callOptions.resource_type).toBe('image');
-    expect(callOptions.eager).toEqual([{ fetch_format: 'auto' }, { quality: 'auto' }]);
+    const expectedImageTransformations = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+    const expectedOverlayTransformation = { raw_transformation: IMAGE_OVERLAY_RAW };
+    expect(callOptions.eager).toEqual(expect.arrayContaining([
+      ...expectedImageTransformations,
+      expectedOverlayTransformation
+    ]));
+    expect(callOptions.eager.length).toBe(expectedImageTransformations.length + 1);
     expect(callOptions.folder).toBe('messages');
   });
 
-  test('should not include eager transformations for video uploads by default in this function', async () => {
+  test('should include correct eager transformations for video uploads', async () => {
     await uploadToCloudinarymedia(mockBuffer, 'video');
     expect(cloudinaryNodeModule.v2.uploader.upload).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload.mock.calls[0][1];
     expect(callOptions.resource_type).toBe('video');
-    expect(callOptions.eager).toBeUndefined();
+    expect(callOptions.eager).toEqual([{ raw_transformation: SMALL_FILE_VIDEO_OVERLAY_RAW }]);
     expect(callOptions.folder).toBe('messages');
   });
 
@@ -122,11 +132,14 @@ describe('uploadVideoToCloudinary', () => {
     expect(cloudinaryNodeModule.v2.uploader.upload_stream).toHaveBeenCalledTimes(1);
     const callOptions = cloudinaryNodeModule.v2.uploader.upload_stream.mock.calls[0][0];
     const expectedSmallVideoTransformations = [{ fetch_format: 'auto' }];
+    const expectedOverlayTransformation = { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_RAW };
     expect(callOptions.eager).toEqual(expect.arrayContaining([
       ...expectedSmallVideoTransformations,
+      expectedOverlayTransformation,
       expectedThumbnailTransformation
     ]));
-    expect(callOptions.eager.length).toBe(expectedSmallVideoTransformations.length + 1);
+    // Original transforms + overlay + thumbnail
+    expect(callOptions.eager.length).toBe(expectedSmallVideoTransformations.length + 1 + 1);
   });
 
   test('should include correct eager transformations for large videos', async () => {
@@ -136,11 +149,14 @@ describe('uploadVideoToCloudinary', () => {
     const expectedLargeVideoTransformations = [
       { width: 1280, crop: "limit" }, { quality: 'auto' }, { fetch_format: 'auto' }
     ];
+    const expectedOverlayTransformation = { raw_transformation: LARGE_FILE_VIDEO_OVERLAY_RAW };
     expect(callOptions.eager).toEqual(expect.arrayContaining([
       ...expectedLargeVideoTransformations,
+      expectedOverlayTransformation,
       expectedThumbnailTransformation
     ]));
-    expect(callOptions.eager.length).toBe(expectedLargeVideoTransformations.length + 1);
+    // Original transforms + overlay + thumbnail
+    expect(callOptions.eager.length).toBe(expectedLargeVideoTransformations.length + 1 + 1);
   });
 
   test('should resolve with secure_url, thumbnail_url, and duration', async () => {

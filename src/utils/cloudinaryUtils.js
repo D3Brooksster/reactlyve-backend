@@ -3,6 +3,10 @@ const dotenv = require('dotenv');
 const { URL } = require('url');
 const { Readable } = require('stream');
 
+const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = "w_1280,c_limit,q_auto,f_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+const IMAGE_OVERLAY_TRANSFORMATION_STRING = "f_auto,q_auto,l_reactlyve:81ad2da14e6d70f29418ba02a7d2aa96,w_0.1,g_south_east,x_10,y_10,fl_layer_apply";
+
 dotenv.config();
 
 cloudinary.config({
@@ -123,15 +127,18 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
 
     let videoTransformationOptions;
     const TEN_MB = 10 * 1024 * 1024;
+    let overlayTransformationString;
 
     if (fileSize < TEN_MB) {
       videoTransformationOptions = [{ fetch_format: 'auto' }];
+      overlayTransformationString = SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     } else {
       videoTransformationOptions = [
         { width: 1280, crop: "limit" },
         { quality: 'auto' },
         { fetch_format: 'auto' }
       ];
+      overlayTransformationString = LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
     }
 
     const thumbnailTransformation = {
@@ -145,10 +152,12 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
 
     // Ensure eagerTransformations is an array and includes the thumbnail
     let eagerTransformations = [];
+    const overlayTransformation = { raw_transformation: overlayTransformationString };
+
     if (Array.isArray(videoTransformationOptions)) {
-      eagerTransformations = [...videoTransformationOptions, thumbnailTransformation];
+      eagerTransformations = [...videoTransformationOptions, overlayTransformation, thumbnailTransformation];
     } else { // It's a single object
-      eagerTransformations = [videoTransformationOptions, thumbnailTransformation];
+      eagerTransformations = [videoTransformationOptions, overlayTransformation, thumbnailTransformation];
     }
 
     const stream = cloudinary.uploader.upload_stream(
@@ -203,7 +212,15 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
     };
 
     if (resourceType === 'image') {
-      uploadOptions.eager = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+      uploadOptions.eager = [
+        { fetch_format: 'auto' },
+        { quality: 'auto' },
+        { raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }
+      ];
+    } else if (resourceType === 'video') {
+      uploadOptions.eager = [
+        { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }
+      ];
     }
 
     const result = await new Promise((resolve, reject) => { // Removed 'any' type
