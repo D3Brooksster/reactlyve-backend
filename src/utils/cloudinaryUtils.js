@@ -1,9 +1,9 @@
-import { v2 as cloudinary } from 'cloudinary';
-import dotenv from 'dotenv';
-import { URL } from 'url'; // Ensure URL is imported if not globally available
-import { Readable } from 'stream'; // Added Readable
+const { v2: cloudinary } = require('cloudinary');
+const dotenv = require('dotenv');
+const { URL } = require('url');
+const { Readable } = require('stream');
 
-dotenv.config(); // Ensure environment variables are loaded
+dotenv.config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -11,7 +11,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_id: string; resource_type: 'image' | 'video' | 'raw' } | null => {
+exports.extractPublicIdAndResourceType = (cloudinaryUrl) => {
   if (typeof cloudinaryUrl !== 'string' || !cloudinaryUrl.includes('cloudinary.com')) {
     if (typeof cloudinaryUrl !== 'string') {
       console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
@@ -26,12 +26,6 @@ export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_
     const pathname = url.pathname;
     const pathSegments = pathname.split('/').filter(segment => segment);
 
-    // Minimal check: /cloud_name/resource_type/delivery_type/public_id...
-    // More robust: find resource_type and then join the rest as public_id
-    // Example: /res.cloudinary.com/cloudname/image/upload/v123/folder/image.jpg
-    // pathSegments would be [cloudname, image, upload, v123, folder, image.jpg]
-    // We need to find 'image', 'video', or 'raw'.
-    
     let resourceTypeIndex = -1;
     for (let i = 0; i < pathSegments.length; i++) {
       if (['image', 'video', 'raw'].includes(pathSegments[i])) {
@@ -41,15 +35,12 @@ export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_
     }
 
     if (resourceTypeIndex === -1 || resourceTypeIndex + 2 >= pathSegments.length) {
-      // Not enough segments after resource_type for delivery_type and public_id
       console.error('Invalid Cloudinary URL: Could not determine resource_type or not enough path segments.', { cloudinaryUrl });
       return null;
     }
     
-    const resource_type = pathSegments[resourceTypeIndex] as 'image' | 'video' | 'raw';
+    const resource_type = pathSegments[resourceTypeIndex];
     
-    // public_id starts after resource_type and delivery_type (e.g., 'upload', 'fetch')
-    // Skip version segment (e.g. v12345) if present directly after delivery_type
     let publicIdStartIndex = resourceTypeIndex + 2; 
     if (pathSegments[publicIdStartIndex]?.match(/^v\d+$/)) {
       publicIdStartIndex++;
@@ -77,21 +68,20 @@ export const extractPublicIdAndResourceType = (cloudinaryUrl: string): { public_
   }
 };
 
-export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
+exports.deleteFromCloudinary = (cloudinaryUrl) => {
   return new Promise((resolve, reject) => {
     try {
       const url = new URL(cloudinaryUrl);
-      if (!url.hostname.includes('cloudinary.com')) {
+      if (url.hostname !== 'res.cloudinary.com' && !url.hostname.endsWith('.cloudinary.com')) {
         console.log(`Skipping deletion for non-Cloudinary URL: ${cloudinaryUrl}`);
         return resolve({ message: "Skipped non-Cloudinary URL" });
       }
     } catch (error) {
-      // If URL parsing fails, it's definitely not a valid Cloudinary URL for our purposes
       console.warn(`Invalid URL provided to deleteFromCloudinary: ${cloudinaryUrl}`, error);
       return resolve({ message: "Skipped invalid URL" });
     }
 
-    const extracted = extractPublicIdAndResourceType(cloudinaryUrl);
+    const extracted = exports.extractPublicIdAndResourceType(cloudinaryUrl); // Use exports.
     if (!extracted) {
       return reject(new Error(`Failed to extract public_id or resource_type from URL: ${cloudinaryUrl}`));
     }
@@ -126,25 +116,39 @@ export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
   });
 };
 
-// === Cloudinary upload utilities ===
-// Moved from messageRoutes.ts to break circular dependency
-
-export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder: string = 'reactions'): Promise<{ secure_url: string; duration: number }> => {
+exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
 
-    let transformation_options;
+    let videoTransformationOptions;
     const TEN_MB = 10 * 1024 * 1024;
 
     if (fileSize < TEN_MB) {
-      transformation_options = [{ fetch_format: 'auto' }];
+      videoTransformationOptions = [{ fetch_format: 'auto' }];
     } else {
-      transformation_options = [
+      videoTransformationOptions = [
         { width: 1280, crop: "limit" },
         { quality: 'auto' },
         { fetch_format: 'auto' }
       ];
+    }
+
+    const thumbnailTransformation = {
+      format: "jpg",
+      crop: "thumb",
+      width: 200,
+      height: 150,
+      start_offset: "0",
+      quality: "auto"
+    };
+
+    // Ensure eagerTransformations is an array and includes the thumbnail
+    let eagerTransformations = [];
+    if (Array.isArray(videoTransformationOptions)) {
+      eagerTransformations = [...videoTransformationOptions, thumbnailTransformation];
+    } else { // It's a single object
+      eagerTransformations = [videoTransformationOptions, thumbnailTransformation];
     }
 
     const stream = cloudinary.uploader.upload_stream(
@@ -152,7 +156,7 @@ export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder
         resource_type: 'video',
         folder: folder,
         eager_async: true,
-        eager: transformation_options
+        eager: eagerTransformations
       },
       (error, result) => {
         if (error) {
@@ -160,7 +164,7 @@ export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder
           return reject(error);
         }
 
-        const secure_url = result?.secure_url || '';
+        const videoSecureUrl = result?.secure_url || '';
         let duration = 0;
         if (result && typeof result.duration === 'number') {
           duration = Math.round(result.duration);
@@ -168,7 +172,18 @@ export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder
           duration = Math.round(result.video.duration);
         }
 
-        resolve({ secure_url, duration });
+        let thumbnailUrl = '';
+        if (result && result.public_id && result.version) {
+          const cloudName = cloudinary.config().cloud_name;
+          // Transformation string for the thumbnail as defined in thumbnailTransformation
+          // c_thumb,f_jpg,h_150,q_auto,so_0,w_200
+          const transformationString = `c_thumb,f_jpg,h_150,q_auto,so_0,w_200`;
+          thumbnailUrl = `https://res.cloudinary.com/${cloudName}/video/upload/${transformationString}/v${result.version}/${result.public_id}.jpg`;
+        } else {
+          console.warn('Could not construct thumbnail URL: public_id or version missing from Cloudinary result.', { result });
+        }
+
+        resolve({ secure_url: videoSecureUrl, thumbnail_url: thumbnailUrl, duration });
       }
     );
 
@@ -176,19 +191,25 @@ export const uploadVideoToCloudinary = (buffer: Buffer, fileSize: number, folder
   });
 };
 
-export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'image' | 'video'): Promise<string> => {
+exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
   try {
     const base64Data = buffer.toString('base64');
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
     const dataUri = `${prefix}${base64Data}`;
 
-    const result = await new Promise<any>((resolve, reject) => {
+    const uploadOptions = { // Removed 'any' type
+      resource_type: resourceType,
+      folder: 'messages',
+    };
+
+    if (resourceType === 'image') {
+      uploadOptions.eager = [{ fetch_format: 'auto' }, { quality: 'auto' }];
+    }
+
+    const result = await new Promise((resolve, reject) => { // Removed 'any' type
       cloudinary.uploader.upload(
         dataUri,
-        {
-          resource_type: resourceType,
-          folder: 'messages',
-        },
+        uploadOptions,
         (error, result) => {
           if (error) reject(error);
           else resolve(result);
@@ -202,7 +223,8 @@ export const uploadToCloudinarymedia = async (buffer: Buffer, resourceType: 'ima
     throw new Error('Failed to upload file to Cloudinary');
   }
 };
-export const deleteMultipleFromCloudinary = (publicIds: string[], resourceType: 'image' | 'video' | 'raw' = 'image'): Promise<any> => {
+
+exports.deleteMultipleFromCloudinary = (publicIds, resourceType = 'image') => {
   return new Promise((resolve, reject) => {
     if (!publicIds || publicIds.length === 0) {
       if (process.env.NODE_ENV === 'development') {
@@ -221,9 +243,6 @@ export const deleteMultipleFromCloudinary = (publicIds: string[], resourceType: 
         return reject(error);
       }
       
-      // result for delete_resources is an object where keys are public_ids and values are { "result": "ok" or "not found" or error message }
-      // Example: { "deleted": { "id1": "ok", "id2": "not_found" }, "deleted_counts": { "id1": { "original": 1, "derived": 0 } }, "failed": {} }
-      // We should check for any failures within the result.
       let allSucceeded = true;
       if (result && typeof result.deleted === 'object') {
         for (const id in result.deleted) {
@@ -234,20 +253,12 @@ export const deleteMultipleFromCloudinary = (publicIds: string[], resourceType: 
             }
           }
         }
-      } else if (result && result.error) { // General error in result
+      } else if (result && result.error) {
         allSucceeded = false;
         console.error('Cloudinary bulk deletion returned an error in the result object:', { result });
       }
 
-
       if (!allSucceeded) {
-        // Even if some fail, the API call itself might not throw an error, but returns failure details in the result.
-        // For simplicity, we can reject if any part of the bulk operation failed, or resolve with detailed status.
-        // Here, let's consider it a partial success but log warnings for failures.
-        // The original instruction was "error handling and logging similar to the existing deleteFromCloudinary"
-        // which rejects on failure. So, if any part fails, we might want to reject.
-        // However, bulk operations might partially succeed.
-        // For now, log warnings and resolve, but this could be changed to reject.
          if (process.env.NODE_ENV === 'development') {
             console.warn('Cloudinary bulk deletion completed with some failures. See details in result object.', { result });
           }
@@ -256,7 +267,7 @@ export const deleteMultipleFromCloudinary = (publicIds: string[], resourceType: 
           console.log(`Successfully bulk deleted or assets not found from Cloudinary.`, { numIds: publicIds.length, resourceType, result });
         }
       }
-      resolve(result); // Resolve with the result object which contains details for each ID
+      resolve(result);
     });
   });
 };
