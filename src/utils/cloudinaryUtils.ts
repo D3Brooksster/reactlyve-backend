@@ -81,7 +81,7 @@ export const deleteFromCloudinary = (cloudinaryUrl: string): Promise<any> => {
   return new Promise((resolve, reject) => {
     try {
       const url = new URL(cloudinaryUrl);
-      if (!url.hostname.includes('cloudinary.com')) {
+      if (url.hostname !== 'res.cloudinary.com' && !url.hostname.endsWith('.cloudinary.com')) {
         console.log(`Skipping deletion for non-Cloudinary URL: ${cloudinaryUrl}`);
         return resolve({ message: "Skipped non-Cloudinary URL" });
       }
