@@ -629,15 +629,16 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
 
     const messageId = rows[0].id;
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
-    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    // Destructure new return values from uploadVideoToCloudinary
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     const queryText = `
       INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''})
       VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}) RETURNING id`;
     
-    const queryParams = [messageId, videoUrl, thumbnailUrl, duration];
+    // Use actualVideoUrl and actualThumbnailUrl in the query
+    const queryParams = [messageId, actualVideoUrl, actualThumbnailUrl, duration];
     if (name) {
       queryParams.push(name);
     }
@@ -914,15 +915,15 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: videoUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
-    const thumbnailUrl = videoUrl; // Assuming thumbnail is same as video, or can be derived
+    // Destructure new return values from uploadVideoToCloudinary
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     await query(
       `UPDATE reactions
        SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW()
        WHERE id = $4`,
-      [videoUrl, thumbnailUrl, duration, reactionId]
+      [actualVideoUrl, actualThumbnailUrl, duration, reactionId]
     );
 
     // Update isreply status of the parent message
@@ -937,7 +938,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
-      videoUrl: videoUrl, // ensure videoUrl is passed in response
+      videoUrl: actualVideoUrl, // ensure actualVideoUrl is passed in response
     });
     return;
   } catch (error) {
