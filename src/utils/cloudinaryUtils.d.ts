@@ -8,12 +8,14 @@ export declare function deleteFromCloudinary(cloudinaryUrl: string): Promise<any
 export declare function uploadVideoToCloudinary(
   buffer: Buffer,
   fileSize: number,
-  folder?: string
+  folder?: string, // folder is optional
+  moderation?: string // moderation is optional
 ): Promise<{ secure_url: string; thumbnail_url: string; duration: number }>;
 
 export declare function uploadToCloudinarymedia(
   buffer: Buffer,
-  resourceType: 'image' | 'video'
+  resourceType: 'image' | 'video',
+  moderation?: string // moderation is optional
 ): Promise<string>;
 
 export declare function deleteMultipleFromCloudinary(

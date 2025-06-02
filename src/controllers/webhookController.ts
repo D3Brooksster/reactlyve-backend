@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
 import { query } from '../config/database.config';
 import { extractPublicIdAndResourceType } from '../utils/cloudinaryUtils';
@@ -15,30 +15,47 @@ if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !pr
   });
 }
 
-export const handleCloudinaryModerationWebhook = async (req: Request, res: Response) => {
+export const handleCloudinaryModerationWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const signature = req.headers['x-cld-signature'] as string;
-    const timestamp = req.headers['x-cld-timestamp'] as string;
-    // req.rawBody should be populated by middleware (e.g., express.json({ verify: ... }))
-    // or express.raw() for this specific route.
-    const bodyString = (req as any).rawBody ? (req as any).rawBody.toString() : JSON.stringify(req.body);
+    const timestampHeader = req.headers['x-cld-timestamp'] as string;
+
+    if (!(req.body instanceof Buffer)) {
+      // This case should ideally not be hit if express.raw() is correctly configured for the route
+      console.error("Webhook body is not a Buffer. Check middleware configuration.");
+      res.status(500).json({ error: "Internal server error: Invalid body type." });
+      return;
+    }
+    const bodyString = req.body.toString();
 
 
-    if (!signature || !timestamp || !bodyString) {
-      console.warn('Missing signature, timestamp, or body for webhook verification.');
-      return res.status(400).json({ error: 'Missing signature or timestamp or body' });
+    if (!signature || !timestampHeader || !bodyString) {
+        console.warn('Missing signature, timestamp, or body for webhook verification.');
+        res.status(400).json({ error: 'Missing signature or timestamp or body' });
+        return;
     }
 
+    const numericTimestamp = parseInt(timestampHeader, 10);
+    if (isNaN(numericTimestamp)) {
+        console.warn('Invalid timestamp header received for webhook.');
+        res.status(400).json({ error: 'Invalid timestamp format' });
+        return;
+    }
+
+    // Assuming the globally configured api_secret is used by default.
+    // The error TS2345 indicated the 4th parameter was expected as a number (valid_for_seconds).
+    const oneHourInSeconds = 3600;
     const isValidSignature = cloudinary.utils.verifyNotificationSignature(
-      bodyString, // body string
-      parseInt(timestamp, 10), // timestamp
-      signature, // signature
-      { api_secret: process.env.CLOUDINARY_API_SECRET as string } // options
+      bodyString,         // 1st: body string
+      numericTimestamp,   // 2nd: timestamp (number)
+      signature,          // 3rd: signature (string)
+      oneHourInSeconds    // 4th: valid_for_seconds (number)
     );
 
     if (!isValidSignature) {
       console.warn('Invalid Cloudinary webhook signature.');
-      return res.status(401).json({ error: 'Invalid signature' });
+      res.status(401).json({ error: 'Invalid signature' });
+      return;
     }
 
     // Signature is valid, proceed with processing the payload
@@ -62,7 +79,8 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
       // or if it's an initial notification before final status.
       // We generally expect final status notifications ('approved', 'rejected', 'failed').
       console.log(`Webhook received for pending moderation: ${public_id}. No DB update needed yet.`);
-      return res.status(200).json({ message: 'Pending notification received, no action taken.' });
+      res.status(200).json({ message: 'Pending notification received, no action taken.' });
+      return;
     } else { // 'failed' or any other status
       internalStatus = 'failed';
       moderationDetailsText = JSON.stringify(moderationResponse || { error: 'Cloudinary moderation process failed' });
@@ -85,10 +103,10 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
          RETURNING id;`,
         [internalStatus, moderationDetailsText, public_id]
       );
-      if (dbResult.rowCount > 0) {
+      if (dbResult && typeof dbResult.rowCount === 'number' && dbResult.rowCount > 0) {
         console.log(`Updated message moderation status for public_id: ${public_id}. Rows affected: ${dbResult.rowCount}`);
       } else {
-        console.log(`No message found with original_imageurl containing public_id: ${public_id}`);
+        console.log(`No message found with original_imageurl containing public_id: ${public_id} (or DB result/rowCount was unusual).`);
       }
     } else if (resource_type === 'video' && public_id) {
       dbResult = await query(
@@ -98,10 +116,10 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
          RETURNING id;`,
         [internalStatus, moderationDetailsText, public_id]
       );
-      if (dbResult.rowCount > 0) {
+      if (dbResult && typeof dbResult.rowCount === 'number' && dbResult.rowCount > 0) {
         console.log(`Updated reaction moderation status for public_id: ${public_id}. Rows affected: ${dbResult.rowCount}`);
       } else {
-        console.log(`No reaction found with original_videourl containing public_id: ${public_id}`);
+        console.log(`No reaction found with original_videourl containing public_id: ${public_id} (or DB result/rowCount was unusual).`);
       }
     } else {
       console.warn(`Webhook for unhandled resource_type or missing public_id: ${resource_type}, ${public_id}`);
@@ -111,7 +129,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
 
   } catch (error: any) {
     console.error('Error handling Cloudinary webhook:', error);
-    // Send a generic error to Cloudinary but log the specific error internally
-    res.status(500).json({ error: 'Failed to process webhook' });
+    // Pass the error to the Express error handling middleware
+    next(error);
   }
 };

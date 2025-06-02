@@ -10,16 +10,6 @@ const router = Router();
 router.post(
   '/cloudinary-moderation',
   express.raw({ type: 'application/json' }), // Process as raw first
-  (req, res, next) => { // Then parse JSON if needed, or let controller handle rawBody
-    // If the controller expects req.body to be parsed JSON after rawBody is read:
-    // try {
-    //   req.body = JSON.parse((req as any).rawBody.toString());
-    // } catch (e) {
-    //   // ignore parsing error if body isn't json, or handle as appropriate
-    // }
-    // The controller is currently written to expect (req as any).rawBody and then it parses.
-    next();
-  },
   handleCloudinaryModerationWebhook
 );
 

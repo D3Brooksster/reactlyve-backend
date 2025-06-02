@@ -40,7 +40,7 @@ describe('handleCloudinaryModerationWebhook', () => {
         'x-cld-signature': 'test-signature',
         'x-cld-timestamp': String(Math.floor(Date.now() / 1000)),
       },
-      // rawBody will be set per test
+      // body will be set per test (as Buffer)
     };
     mockResponse = {
       status: mockStatus,
@@ -58,13 +58,13 @@ describe('handleCloudinaryModerationWebhook', () => {
 
   it('should return 400 if signature, timestamp, or body is missing', async () => {
     const testCases = [
-      { ...mockRequest, headers: { ...mockRequest.headers, 'x-cld-signature': undefined } },
-      { ...mockRequest, headers: { ...mockRequest.headers, 'x-cld-timestamp': undefined } },
-      { ...mockRequest, rawBody: undefined },
+      { ...mockRequest, headers: { ...mockRequest.headers, 'x-cld-signature': undefined }, body: Buffer.from(JSON.stringify({})) }, // body needs to be a Buffer
+      { ...mockRequest, headers: { ...mockRequest.headers, 'x-cld-timestamp': undefined }, body: Buffer.from(JSON.stringify({})) }, // body needs to be a Buffer
+      { ...mockRequest, body: undefined }, // This will be caught by the new Buffer check or the bodyString check if body is truly undefined
     ];
 
     for (const req of testCases) {
-      await handleCloudinaryModerationWebhook(req as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(req as Request, mockResponse as Response, jest.fn());
       expect(mockStatus).toHaveBeenCalledWith(400);
       expect(mockJson).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
     }
@@ -72,9 +72,9 @@ describe('handleCloudinaryModerationWebhook', () => {
 
   it('should return 401 if signature verification fails', async () => {
     (cloudinary.utils.verifyNotificationSignature as jest.Mock).mockReturnValue(false);
-    mockRequest.rawBody = Buffer.from(JSON.stringify({ test: 'body' }));
+    mockRequest.body = Buffer.from(JSON.stringify({ test: 'body' }));
 
-    await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+    await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
     expect(cloudinary.utils.verifyNotificationSignature).toHaveBeenCalled();
     expect(mockStatus).toHaveBeenCalledWith(401);
@@ -93,10 +93,10 @@ describe('handleCloudinaryModerationWebhook', () => {
         resource_type: 'image',
         moderation_response: {}, // Empty for approved
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [{ id: 'message_id_1' }] });
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE messages'),
@@ -113,10 +113,10 @@ describe('handleCloudinaryModerationWebhook', () => {
         resource_type: 'image',
         moderation_response: { moderation_labels: [{ name: 'Explicit Nudity', confidence: 0.9 }] },
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [{ id: 'message_id_2' }] });
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE messages'),
@@ -135,10 +135,10 @@ describe('handleCloudinaryModerationWebhook', () => {
         resource_type: 'video',
         moderation_response: {},
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [{ id: 'reaction_id_1' }] });
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE reactions'),
@@ -155,10 +155,10 @@ describe('handleCloudinaryModerationWebhook', () => {
         resource_type: 'video',
         moderation_response: { moderation_labels: [{ name: 'Violence', confidence: 0.8 }] },
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [{ id: 'reaction_id_2' }] });
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE reactions'),
@@ -174,9 +174,9 @@ describe('handleCloudinaryModerationWebhook', () => {
         moderation_status: 'pending',
         resource_type: 'image',
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).not.toHaveBeenCalled();
       expect(mockStatus).toHaveBeenCalledWith(200);
@@ -190,10 +190,10 @@ describe('handleCloudinaryModerationWebhook', () => {
         moderation_status: 'approved',
         resource_type: 'image',
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockRejectedValue(new Error('DB connection error'));
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalled();
       expect(mockStatus).toHaveBeenCalledWith(500);
@@ -206,11 +206,11 @@ describe('handleCloudinaryModerationWebhook', () => {
         moderation_status: 'approved',
         resource_type: 'image',
       };
-      mockRequest.rawBody = Buffer.from(JSON.stringify(payload));
+      mockRequest.body = Buffer.from(JSON.stringify(payload));
       (query as jest.Mock).mockResolvedValue({ rowCount: 0, rows: [] }); // Simulate 0 rows affected
       const consoleLogSpy = jest.spyOn(console, 'log'); // Spy on console.log
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response);
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
 
       expect(query).toHaveBeenCalled();
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining(`No message found with original_imageurl containing public_id: ${payload.public_id}`));
