@@ -191,13 +191,17 @@ describe('handleCloudinaryModerationWebhook', () => {
         resource_type: 'image',
       };
       mockRequest.body = Buffer.from(JSON.stringify(payload));
-      (query as jest.Mock).mockRejectedValue(new Error('DB connection error'));
+      const dbError = new Error('DB connection error');
+      (query as jest.Mock).mockRejectedValue(dbError);
+      const mockNext = jest.fn();
 
-      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
+      await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, mockNext);
 
       expect(query).toHaveBeenCalled();
-      expect(mockStatus).toHaveBeenCalledWith(500);
-      expect(mockJson).toHaveBeenCalledWith({ error: 'Failed to process webhook' });
+      expect(mockNext).toHaveBeenCalledWith(dbError);
+      // Ensure no response is sent directly by the handler when next(error) is called
+      expect(mockStatus).not.toHaveBeenCalled();
+      expect(mockJson).not.toHaveBeenCalled();
     });
 
     it('Public ID not found in DB: should log and return 200', async () => {

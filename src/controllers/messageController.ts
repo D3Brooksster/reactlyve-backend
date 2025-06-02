@@ -70,7 +70,7 @@ export const sendMessage = (req: Request, res: Response) => {
     }
 
     try {
-      const { content, passcode, reaction_length } = req.body; // Extract reaction_length
+      const { content, passcode, reaction_length, enableModeration = true } = req.body; // Add enableModeration
       const senderId = user.id; // Use user.id from the asserted user
 
       // Validate reaction_length
@@ -94,23 +94,30 @@ export const sendMessage = (req: Request, res: Response) => {
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
         if (mediaType === 'video') {
-          // For videos, moderation will be handled in the recordReaction or similar video-specific upload function
+          // Video moderation handled in uploadReactionVideo
           const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
           mediaUrl = uploadResult.secure_url;
         } else { // image
-          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image', 'aws_rek');
+          let moderationParameter: string | undefined = undefined;
+          if (enableModeration) {
+            moderationParameter = 'aws_rek';
+          }
+          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image', moderationParameter);
         }
       }
 
       const shareableLink = generateShareableLink();
       const mediaSize = req.file ? req.file.size : null;
+      
+      const isImage = mediaType === 'image';
+      const currentModerationStatus = isImage ? (enableModeration ? 'pending' : 'moderation_off') : null;
+      const currentOriginalImageUrl = isImage ? (enableModeration ? mediaUrl : null) : null;
 
-      // When media is an image and moderation is applied, imageurl will be the same as original_imageurl initially.
-      // moderation_status is set to 'pending'. moderation_details is NULL by default.
+
       const { rows } = await query(
         `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size, original_imageurl, moderation_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, mediaType === 'image' ? mediaUrl : null, mediaType === 'image' ? 'pending' : null]
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, currentOriginalImageUrl, currentModerationStatus]
       );
 
       const message = rows[0];
@@ -118,12 +125,12 @@ export const sendMessage = (req: Request, res: Response) => {
         id: message.id,
         senderId: message.senderid,
         content: message.content,
-        imageUrl: message.imageurl, // This will be the original_imageurl for now
+        imageUrl: message.imageurl, 
         mediaType: message.mediatype,
         mediaSize: message.media_size,
         shareableLink: message.shareablelink,
         reactionLength: message.reaction_length,
-        moderationStatus: message.moderation_status, // Include moderation status
+        moderationStatus: message.moderation_status,
         createdAt: new Date(message.createdat).toISOString(),
         updatedAt: new Date(message.updatedat).toISOString()
       });
@@ -196,12 +203,28 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
             
             let displayVideoUrl = reaction.videourl;
             let displayThumbnailUrl = reaction.thumbnailurl;
-            if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
-              const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
-              displayVideoUrl = `moderation_failed_[${reason}]`;
-              displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`; // Or a generic placeholder
-            }
+            let formattedReason = "content-policy";
 
+            if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
+              if (reaction.moderation_details && typeof reaction.moderation_details === 'string') {
+                try {
+                  const labels = JSON.parse(reaction.moderation_details);
+                  if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+                    formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+                  }
+                } catch (e) {
+                  console.warn('Failed to parse moderation_details or extract label name for reaction reason formatting:', reaction.moderation_details, e);
+                }
+              }
+              displayVideoUrl = `moderation_failed_${formattedReason}`;
+              displayThumbnailUrl = `moderation_failed_thumbnail_${formattedReason}`;
+            } else if (reaction.moderation_status === 'moderation_off') {
+              // Keep original URLs, no transformation needed
+            } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
+              displayVideoUrl = reaction.original_videourl;
+              displayThumbnailUrl = reaction.thumbnailurl; // Or regenerate if needed
+            }
+            
             map[msgId].push({
               id: reaction.id,
               name: reaction.name,
@@ -219,15 +242,26 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         // Format messages with attached reactions
         const formattedMessages = messages.map(msg => {
           let displayImageUrl = msg.imageurl;
+          let formattedReason = "content-policy";
+
           if (msg.moderation_status === 'rejected' || msg.moderation_status === 'failed') {
-            const reason = msg.moderation_details ? msg.moderation_details.substring(0, 30) : "policy";
-            displayImageUrl = `moderation_failed_[${reason}]`;
+            if (msg.moderation_details && typeof msg.moderation_details === 'string') {
+              try {
+                const labels = JSON.parse(msg.moderation_details);
+                if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+                  formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+                }
+              } catch (e) {
+                console.warn('Failed to parse moderation_details or extract label name for message reason formatting:', msg.moderation_details, e);
+              }
+            }
+            displayImageUrl = `moderation_failed_${formattedReason}`;
+          } else if (msg.moderation_status === 'moderation_off') {
+            // Keep original URL
           } else if (msg.imageurl === null && msg.original_imageurl && (msg.moderation_status === 'pending' || msg.moderation_status === 'approved')) {
-            // This case handles if webhook initially set imageurl to NULL for an approved/pending asset, we should use original
             displayImageUrl = msg.original_imageurl;
           }
-
-
+          
           return {
             id: msg.id,
             content: msg.content,
@@ -304,16 +338,26 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       
       let displayVideoUrl = reaction.videourl;
       let displayThumbnailUrl = reaction.thumbnailurl;
+      let formattedReason = "content-policy";
+
       if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
-        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
-        displayVideoUrl = `moderation_failed_[${reason}]`;
-        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+        if (reaction.moderation_details && typeof reaction.moderation_details === 'string') {
+          try {
+            const labels = JSON.parse(reaction.moderation_details);
+            if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+              formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+            }
+          } catch (e) {
+            console.warn('Failed to parse moderation_details or extract label name for reaction reason formatting:', reaction.moderation_details, e);
+          }
+        }
+        displayVideoUrl = `moderation_failed_${formattedReason}`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_${formattedReason}`;
+      } else if (reaction.moderation_status === 'moderation_off') {
+        // Keep original URLs
       } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
         displayVideoUrl = reaction.original_videourl;
-        // Potentially regenerate thumbnail URL if original_videourl is used and thumbnail was also nulled
-        // For simplicity, if original_videourl is present, we assume thumbnail should also be derived or taken from original if possible.
-        // This might need more sophisticated logic if thumbnail was also cleared by webhook and needs to be based on original_videourl.
-         displayThumbnailUrl = reaction.thumbnailurl; // or regenerate if necessary
+        displayThumbnailUrl = reaction.thumbnailurl;
       }
 
       return {
@@ -336,9 +380,38 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     }));
     
     let displayImageUrl = message.imageurl;
+    let formattedReason = "content-policy";
+
     if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
-      const reason = message.moderation_details ? message.moderation_details.substring(0, 30) : "policy";
-      displayImageUrl = `moderation_failed_[${reason}]`;
+      if (message.moderation_details && typeof message.moderation_details === 'string') {
+        try {
+          const labels = JSON.parse(message.moderation_details);
+          if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+            formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+          }
+        } catch (e) {
+          console.warn('Failed to parse moderation_details or extract label name for message reason formatting:', message.moderation_details, e);
+        }
+      }
+      displayImageUrl = `moderation_failed_${formattedReason}`;
+    } else if (message.moderation_status === 'moderation_off') {
+      // Keep original URL
+    let formattedReason = "content-policy";
+
+    if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
+      if (message.moderation_details && typeof message.moderation_details === 'string') {
+        try {
+          const labels = JSON.parse(message.moderation_details);
+          if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+            formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+          }
+        } catch (e) {
+          console.warn('Failed to parse moderation_details or extract label name for message reason formatting:', message.moderation_details, e);
+        }
+      }
+      displayImageUrl = `moderation_failed_${formattedReason}`;
+    } else if (message.moderation_status === 'moderation_off') {
+      // Keep original URL
     } else if (message.imageurl === null && message.original_imageurl && (message.moderation_status === 'pending' || message.moderation_status === 'approved')) {
       displayImageUrl = message.original_imageurl;
     }
@@ -634,7 +707,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       reaction_length: message.reaction_length, 
       mediaSize: message.media_size,
       moderationStatus: message.moderation_status,
-      moderationDetails: message.moderation_details, // Consider summarizing if too verbose
+      moderationDetails: message.moderation_details, 
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
@@ -672,9 +745,22 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
     });
 
     let displayImageUrl = message.imageurl;
+    let formattedReason = "content-policy";
+
     if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
-      const reason = message.moderation_details ? message.moderation_details.substring(0, 30) : "policy";
-      displayImageUrl = `moderation_failed_[${reason}]`;
+      if (message.moderation_details && typeof message.moderation_details === 'string') {
+        try {
+          const labels = JSON.parse(message.moderation_details);
+          if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+            formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+          }
+        } catch (e) {
+          console.warn('Failed to parse moderation_details or extract label name for message reason formatting:', message.moderation_details, e);
+        }
+      }
+      displayImageUrl = `moderation_failed_${formattedReason}`;
+    } else if (message.moderation_status === 'moderation_off') {
+      // Keep original URL
     } else if (message.imageurl === null && message.original_imageurl && (message.moderation_status === 'pending' || message.moderation_status === 'approved')) {
       displayImageUrl = message.original_imageurl;
     }
@@ -689,7 +775,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         passcodeVerified: true,
         mediaSize: message.media_size,
         moderationStatus: message.moderation_status,
-        moderationDetails: message.moderation_details, // Consider summarizing
+        moderationDetails: message.moderation_details,
         createdAt: new Date(message.createdat).toISOString()
       }
     });
@@ -836,14 +922,25 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       const reaction = rows[0];
       let displayVideoUrl = reaction.videourl;
       let displayThumbnailUrl = reaction.thumbnailurl;
+      let formattedReason = "content-policy";
 
       if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
-        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
-        displayVideoUrl = `moderation_failed_[${reason}]`;
-        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+        if (reaction.moderation_details && typeof reaction.moderation_details === 'string') {
+          try {
+            const labels = JSON.parse(reaction.moderation_details);
+            if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+              formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+            }
+          } catch (e) {
+            console.warn('Failed to parse moderation_details or extract label name for reaction reason formatting:', reaction.moderation_details, e);
+          }
+        }
+        displayVideoUrl = `moderation_failed_${formattedReason}`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_${formattedReason}`;
+      } else if (reaction.moderation_status === 'moderation_off') {
+        // Keep original URLs
       } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
         displayVideoUrl = reaction.original_videourl;
-        // Similar to getMessageById, thumbnail might need specific handling if original is used
         displayThumbnailUrl = reaction.thumbnailurl; 
       }
 
@@ -1019,23 +1116,30 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
 
 export const uploadReactionVideo = async (req: Request, res: Response): Promise<void> => {
   const { reactionId } = req.params;
+  const { enableModeration = true } = req.body; // Added enableModeration
+
   if (!req.file) {
     res.status(400).json({ error: 'No video file provided' });
     return;
   }
 
   try {
-    // Destructure new return values from uploadVideoToCloudinary
-    // Pass moderation parameter
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'reactions', 'aws_rek');
-    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
+    let moderationParameter: string | undefined = undefined;
+    if (enableModeration) {
+      moderationParameter = 'aws_rek';
+    }
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'reactions', moderationParameter);
+    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; 
+
+    const currentModerationStatus = enableModeration ? 'pending' : 'moderation_off';
+    const currentOriginalVideoUrl = enableModeration ? actualVideoUrl : null;
 
     await query(
       `UPDATE reactions
        SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW(),
-           original_videourl = $1, moderation_status = 'pending', moderation_details = NULL
+           original_videourl = $5, moderation_status = $6, moderation_details = NULL
        WHERE id = $4`,
-      [actualVideoUrl, actualThumbnailUrl, duration, reactionId]
+      [actualVideoUrl, actualThumbnailUrl, duration, reactionId, currentOriginalVideoUrl, currentModerationStatus]
     );
 
     // Update isreply status of the parent message
@@ -1075,10 +1179,23 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
     const formattedReactions = rows.map(reaction => {
       let displayVideoUrl = reaction.videourl;
       let displayThumbnailUrl = reaction.thumbnailurl;
+      let formattedReason = "content-policy";
+
       if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
-        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
-        displayVideoUrl = `moderation_failed_[${reason}]`;
-        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+        if (reaction.moderation_details && typeof reaction.moderation_details === 'string') {
+          try {
+            const labels = JSON.parse(reaction.moderation_details);
+            if (Array.isArray(labels) && labels.length > 0 && labels[0] && typeof labels[0].Name === 'string' && labels[0].Name.trim() !== '') {
+              formattedReason = labels[0].Name.trim().toLowerCase().replace(/\s+/g, '-');
+            }
+          } catch (e) {
+            console.warn('Failed to parse moderation_details or extract label name for reaction reason formatting:', reaction.moderation_details, e);
+          }
+        }
+        displayVideoUrl = `moderation_failed_${formattedReason}`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_${formattedReason}`;
+      } else if (reaction.moderation_status === 'moderation_off') {
+        // Keep original URLs
       } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
         displayVideoUrl = reaction.original_videourl;
         displayThumbnailUrl = reaction.thumbnailurl; 

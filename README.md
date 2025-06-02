@@ -121,7 +121,9 @@ The API provides several route groups for different functionalities:
     *   Fetching current authenticated user details.
 *   **`/api/messages`** (and related routes for reactions/replies): Manages the messaging system.
     *   Creating, retrieving, updating, and deleting messages.
+        *   When creating messages with media (images/videos), the request body can include an optional boolean field `enableModeration` (defaults to `true`). If set to `false`, moderation for that specific media item will be skipped, and its `moderation_status` will be set to `'moderation_off'`.
     *   Managing message reactions and replies.
+        *   When uploading reaction videos (e.g., via `PUT /reactions/:reactionId/video`), the request body can also include an optional boolean field `enableModeration` (defaults to `true`). If `false`, moderation for the reaction video is skipped.
 *   **`/api/profile`**: User profile operations.
     *   Viewing user's own profile.
     *   Deleting user's own account.
@@ -182,21 +184,24 @@ This feature uses the Cloudinary Amazon Rekognition AI Moderation add-on.
     *   The corresponding database record in `messages` (for images) or `reactions` (for videos) is updated based on the `public_id` (by matching against `original_imageurl` or `original_videourl`).
     *   The record's `moderation_status` and `moderation_details` are updated.
     *   If the content is 'rejected' or 'failed', the main `imageurl` (for messages) or `videourl` (for reactions) is set to `NULL` in the database.
-7.  Subsequent API GET requests for messages/reactions will format the `imageurl` or `videourl` fields in the JSON response. If moderation status is 'rejected' or 'failed', a placeholder string like "moderation_failed_\[reason]" will be returned instead of a direct media URL. Otherwise, the original URL is returned.
+7.  Subsequent API GET requests for messages/reactions will format the `imageurl` or `videourl` fields in the JSON response.
+    *   If `moderation_status` is 'rejected' or 'failed', a placeholder string like `"moderation_failed_formatted-reason"` will be returned (e.g., `"moderation_failed_explicit-nudity"` or `"moderation_failed_content-policy"` if details are unavailable/unparseable).
+    *   If `moderation_status` is 'moderation_off', the direct `imageurl`/`videourl` is returned (as moderation was skipped).
+    *   Otherwise (e.g., 'approved', 'pending'), the `imageurl`/`videourl` (which should point to the original URL or be the direct URL if moderation was initially off) is returned.
 
 ### Database Changes for Moderation
 
 The following columns have been added to support the moderation feature:
 
 **`messages` table:**
-*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded image (e.g., 'pending', 'approved', 'rejected', 'failed'). Defaults to 'pending'.
+*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded image (e.g., 'pending', 'approved', 'rejected', 'failed', 'moderation_off'). Defaults to 'pending'. `'moderation_off'` indicates that moderation was intentionally skipped for this item via the `enableModeration: false` upload parameter.
 *   `moderation_details (TEXT)`: Stores detailed information from the moderation service, such as rejection reasons or detected labels from AWS Rekognition.
-*   `original_imageurl (TEXT)`: Stores the direct URL of the image as returned by Cloudinary upon initial upload, before any moderation status might alter the publicly accessible `imageurl`.
+*   `original_imageurl (TEXT)`: Stores the direct URL of the image as returned by Cloudinary upon initial upload, especially relevant if moderation is enabled.
 
 **`reactions` table:**
-*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded reaction video. Defaults to 'pending'.
+*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded reaction video (e.g., 'pending', 'approved', 'rejected', 'failed', 'moderation_off'). Defaults to 'pending'. `'moderation_off'` indicates that moderation was intentionally skipped.
 *   `moderation_details (TEXT)`: Stores detailed information from the moderation service for the video.
-*   `original_videourl (TEXT)`: Stores the direct URL of the video as returned by Cloudinary upon initial upload.
+*   `original_videourl (TEXT)`: Stores the direct URL of the video as returned by Cloudinary upon initial upload, especially relevant if moderation is enabled.
 
 Indexes have been added on the `moderation_status` columns in both tables to efficiently query for pending items if needed in the future.
 

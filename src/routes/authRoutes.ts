@@ -20,12 +20,12 @@
 
 // export default router;
 
-import { Router } from 'express';
+import { Router } from 'express'; // Standard named import
 import passport from 'passport';
 import { googleCallback, getCurrentUser } from '../controllers/authController';
 import { requireAuth } from '../middlewares/middleware';
 
-const router = Router();
+const router = Router(); // Standard usage
 
 router.get('/google', passport.authenticate('google', {
   scope: ['profile', 'email']
