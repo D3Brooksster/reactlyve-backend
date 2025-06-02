@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
 import userProfileRoutes from './routes/userProfileRoutes';
 import adminRoutes from './routes/adminRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 
 // Import for cron job
 import cron from 'node-cron';
@@ -47,6 +48,12 @@ pool.query('SELECT NOW()', (err, res) => {
     console.log('Connected to database:', res.rows[0]);
   }
 });
+
+// Webhook routes should be registered before global JSON parser if it doesn't preserve rawBody,
+// but since webhookRoutes uses its own express.raw(), order might be less critical here.
+// However, placing it before other /api routes is clean.
+app.use('/webhooks', webhookRoutes);
+
 app.use('/api/auth', authRoutes);
 app.use('/api', messageRoutes); // Assuming this is for general messages, e.g. /api/messages
 app.use('/api/profile', userProfileRoutes);

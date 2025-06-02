@@ -122,7 +122,7 @@ exports.deleteFromCloudinary = (cloudinaryUrl) => {
   });
 };
 
-exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
+exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', moderation) => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -162,13 +162,19 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
     //   eagerTransformations = [videoTransformationOptions, overlayStep, thumbnailTransformation];
     // }
 
+    const uploadOptions = {
+      resource_type: 'video',
+      folder: folder,
+      eager_async: true,
+      eager: eagerTransformations
+    };
+
+    if (moderation) {
+      uploadOptions.moderation = moderation;
+    }
+
     const stream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: 'video',
-        folder: folder,
-        eager_async: true,
-        eager: eagerTransformations
-      },
+      uploadOptions,
       (error, result) => {
         if (error) {
           console.error('Cloudinary error:', error);
@@ -211,16 +217,20 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
   });
 };
 
-exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
+exports.uploadToCloudinarymedia = async (buffer, resourceType, moderation) => {
   try {
     const base64Data = buffer.toString('base64');
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
     const dataUri = `${prefix}${base64Data}`;
 
-    const uploadOptions = { // Removed 'any' type
+    const uploadOptions = {
       resource_type: resourceType,
       folder: 'messages',
     };
+
+    if (moderation) {
+      uploadOptions.moderation = moderation;
+    }
 
     // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION }; // Not used in this approach
 
@@ -234,7 +244,7 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
       uploadOptions.eager = [{ raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }];
     }
 
-    const result = await new Promise((resolve, reject) => { // Removed 'any' type
+    const result = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload(
         dataUri,
         uploadOptions,

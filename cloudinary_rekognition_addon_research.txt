@@ -1,0 +1,67 @@
+## Cloudinary AWS Rekognition Moderation Add-on Research
+
+### How to Enable the Add-on:
+- A Cloudinary account is required.
+- Register for the "Amazon Rekognition AI Moderation" add-on via the Add-ons page in the Cloudinary console (Settings > Add-ons).
+  - Link: https://console.cloudinary.com/settings/addons
+
+### How to Specify Moderation During Upload:
+- Use the `moderation` parameter in the Cloudinary upload API call.
+- Set its value to `aws_rek`.
+  - Example (Ruby SDK from Cloudinary docs): `Cloudinary::Uploader.upload("user_image.jpg", :moderation => 'aws_rek', :notification_url => 'https://mysite/mycallback')`
+- Optional parameters:
+    - Override default confidence levels per category: Append to `aws_rek` value, e.g., `aws_rek:Explicit_Nudity:0.7:Suggestive:0.8`.
+    - Exclude a category: Set category confidence to `ignore`, e.g., `aws_rek:Drugs:ignore`.
+    - Force return of `moderation_labels`: Use `aws_rek:min_confidence:0.0`.
+- Images must have a minimum height and width of 80 pixels.
+- Upload presets can be used to define these settings centrally.
+
+### How Cloudinary Sends Notifications:
+- **Callback URL:** A `notification_url` can be provided in the upload request. Cloudinary will send a POST request to this URL with the moderation results.
+- **Upload API Response:** The direct response from the upload API call also contains the moderation status and details.
+    - Example JSON structure (from Cloudinary docs):
+      ```json
+      {
+        "public_id": "image_public_id",
+        "moderation": [
+          {
+            "kind": "aws_rek",
+            "status": "rejected", // or "approved"
+            "moderation_labels": [
+              {
+                "confidence": 0.9920668601989746,
+                "name": "Explicit Nudity",
+                "parent_name": ""
+              },
+              // ... other labels
+            ],
+            "human_loop_id": "1234567890" // If applicable
+          }
+        ]
+        // ... other asset details
+      }
+      ```
+- **Asset Status:**
+    - Rejected images are backed up but not publicly available or visible in the default Media Library views.
+    - Approved images are processed normally.
+- **Listing Moderated Assets:**
+    - Admin API: `resources_by_moderation` method can list 'approved' or 'rejected' images.
+    - Media Library: Provides an interface to view moderated images.
+- **Manual Override:** Moderation decisions can be manually changed via the Admin API (`update` method with `moderation_status` parameter) or through the Media Library interface.
+
+### Free Tiers and Pricing:
+- The "Rekognition AI Moderation" add-on has the following pricing tiers (as of information found on `https://cloudinary.com/addons`):
+    - **Free:** 50 moderations/month
+    - **Bronze:** 7,500 moderations/month for $10
+    - **Silver:** 40,000 moderations/month for $50
+    - **Gold:** 125,000 moderations/month for $150
+    - **Titanium:** 350,000 moderations/month for $400
+- Usage of AWS Rekognition itself through this add-on is subject to AWS service terms.
+  - AWS Service Terms: https://aws.amazon.com/service-terms/
+- The documentation also mentions "Rekognition AI Video Moderation" with separate pricing (per second of video).
+
+### Moderation Categories:
+- Amazon Rekognition uses a hierarchical list of categories for unsafe content (e.g., 'Explicit Nudity', 'Suggestive', 'Violence').
+- A full list is available at: https://docs.aws.amazon.com/rekognition/latest/dg/moderation.html
+- Default confidence threshold for rejection is 0.5 for all categories, but can be overridden per category.
+- Category names in API calls should be lowercase with underscores (e.g., `explicit_nudity`).

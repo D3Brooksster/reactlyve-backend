@@ -152,6 +152,61 @@ This section describes automated jobs that run as part of the application.
     *   The core logic for the job is implemented in `src/jobs/accountCleanupJob.ts`.
     *   The job is scheduled using `node-cron` within the main application file `src/index.ts`.
 
+## Moderation Feature (Cloudinary + AWS Rekognition)
+
+This feature uses the Cloudinary Amazon Rekognition AI Moderation add-on.
+
+### Prerequisites:
+
+1.  **Enable Cloudinary Add-on:**
+    *   Log in to your Cloudinary account.
+    *   Navigate to "Add-ons" (or similar section).
+    *   Enable the "Amazon Rekognition AI Moderation" add-on. Please check the current free tier and pricing details.
+
+2.  **AWS Credentials:**
+    *   Ensure you have an AWS account.
+    *   Configure the following environment variables in your deployment environment:
+        *   `AWS_ACCESS_KEY_ID`: Your AWS access key ID.
+        *   `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key.
+        *   `AWS_REGION`: The AWS region for Rekognition services (e.g., `us-east-1`).
+
+### Moderation Workflow
+
+1.  Image/video upload triggers a call to Cloudinary with the `moderation: 'aws_rek'` parameter.
+2.  The media is stored with an initial `moderation_status` of 'pending' in the database, and the `original_imageurl` or `original_videourl` field is populated. The main `imageurl`/`videourl` will also point to the original URL at this stage.
+3.  Cloudinary (using AWS Rekognition) performs the moderation asynchronously.
+4.  Upon completion, Cloudinary sends a signed webhook notification to the `POST /webhooks/cloudinary-moderation` endpoint in this backend.
+5.  The backend verifies the webhook's signature using the `X-Cld-Signature` and `X-Cld-Timestamp` headers and your Cloudinary API Secret.
+6.  If the signature is valid, the payload is processed:
+    *   `public_id`, `moderation_status` (Cloudinary's status), `resource_type`, and `moderation_response` (details from Rekognition) are extracted.
+    *   The corresponding database record in `messages` (for images) or `reactions` (for videos) is updated based on the `public_id` (by matching against `original_imageurl` or `original_videourl`).
+    *   The record's `moderation_status` and `moderation_details` are updated.
+    *   If the content is 'rejected' or 'failed', the main `imageurl` (for messages) or `videourl` (for reactions) is set to `NULL` in the database.
+7.  Subsequent API GET requests for messages/reactions will format the `imageurl` or `videourl` fields in the JSON response. If moderation status is 'rejected' or 'failed', a placeholder string like "moderation_failed_\[reason]" will be returned instead of a direct media URL. Otherwise, the original URL is returned.
+
+### Database Changes for Moderation
+
+The following columns have been added to support the moderation feature:
+
+**`messages` table:**
+*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded image (e.g., 'pending', 'approved', 'rejected', 'failed'). Defaults to 'pending'.
+*   `moderation_details (TEXT)`: Stores detailed information from the moderation service, such as rejection reasons or detected labels from AWS Rekognition.
+*   `original_imageurl (TEXT)`: Stores the direct URL of the image as returned by Cloudinary upon initial upload, before any moderation status might alter the publicly accessible `imageurl`.
+
+**`reactions` table:**
+*   `moderation_status (VARCHAR(20))`: Stores the current moderation state of the uploaded reaction video. Defaults to 'pending'.
+*   `moderation_details (TEXT)`: Stores detailed information from the moderation service for the video.
+*   `original_videourl (TEXT)`: Stores the direct URL of the video as returned by Cloudinary upon initial upload.
+
+Indexes have been added on the `moderation_status` columns in both tables to efficiently query for pending items if needed in the future.
+
+### Webhook for Moderation
+
+*   **Endpoint:** `POST /webhooks/cloudinary-moderation`
+*   **Purpose:** This endpoint is designed to receive asynchronous moderation status updates from Cloudinary after an image or video has been processed by the AWS Rekognition AI Moderation add-on.
+*   **Security:** Incoming requests to this endpoint are secured. The backend verifies a signature sent by Cloudinary in the `X-Cld-Signature` header, using the `X-Cld-Timestamp` header and your Cloudinary API Secret. This ensures that the notifications are genuinely from Cloudinary and have not been tampered with.
+*   **Configuration Note:** To use this feature, you must configure this endpoint URL (`<your_backend_base_url>/webhooks/cloudinary-moderation`) in your Cloudinary account settings under "Webhook Notifications" (or a similar section for notifications). Ensure it's set up to receive notifications for moderation events.
+
 ## Project Structure
 
 A brief overview of key directories within the `src/` folder:

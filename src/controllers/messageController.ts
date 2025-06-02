@@ -94,22 +94,23 @@ export const sendMessage = (req: Request, res: Response) => {
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
         if (mediaType === 'video') {
-          // The problem description mentions that uploadVideoToCloudinary will be updated
-          // to accept a folder argument. We are assuming it's the second argument.
+          // For videos, moderation will be handled in the recordReaction or similar video-specific upload function
           const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
-          mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
-        } else {
-          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
+          mediaUrl = uploadResult.secure_url;
+        } else { // image
+          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image', 'aws_rek');
         }
       }
 
       const shareableLink = generateShareableLink();
       const mediaSize = req.file ? req.file.size : null;
 
+      // When media is an image and moderation is applied, imageurl will be the same as original_imageurl initially.
+      // moderation_status is set to 'pending'. moderation_details is NULL by default.
       const { rows } = await query(
-        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize]
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size, original_imageurl, moderation_status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, mediaType === 'image' ? mediaUrl : null, mediaType === 'image' ? 'pending' : null]
       );
 
       const message = rows[0];
@@ -117,11 +118,12 @@ export const sendMessage = (req: Request, res: Response) => {
         id: message.id,
         senderId: message.senderid,
         content: message.content,
-        imageUrl: message.imageurl,
+        imageUrl: message.imageurl, // This will be the original_imageurl for now
         mediaType: message.mediatype,
         mediaSize: message.media_size,
         shareableLink: message.shareablelink,
-        reactionLength: message.reaction_length, // Add reaction_length to response
+        reactionLength: message.reaction_length,
+        moderationStatus: message.moderation_status, // Include moderation status
         createdAt: new Date(message.createdat).toISOString(),
         updatedAt: new Date(message.updatedat).toISOString()
       });
@@ -166,7 +168,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size, moderation_status, moderation_details, original_imageurl
            FROM messages 
            WHERE senderid = $1 
            ORDER BY createdat DESC 
@@ -181,7 +183,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         if (messageIds.length > 0) {
           const { rows: reactions } = await query(
-            `SELECT id, messageid, name, createdat
+            `SELECT id, messageid, name, createdat, videourl, thumbnailurl, duration, moderation_status, moderation_details, original_videourl
              FROM reactions
              WHERE messageid = ANY($1::uuid[])`,
             [messageIds]
@@ -191,9 +193,23 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
           reactionMap = reactions.reduce((map, reaction) => {
             const msgId = reaction.messageid;
             if (!map[msgId]) map[msgId] = [];
+
+            let displayVideoUrl = reaction.videourl;
+            let displayThumbnailUrl = reaction.thumbnailurl;
+            if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
+              const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
+              displayVideoUrl = `moderation_failed_[${reason}]`;
+              displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`; // Or a generic placeholder
+            }
+
             map[msgId].push({
               id: reaction.id,
               name: reaction.name,
+              videoUrl: displayVideoUrl,
+              thumbnailUrl: displayThumbnailUrl,
+              duration: reaction.duration,
+              moderationStatus: reaction.moderation_status,
+              moderationDetails: reaction.moderation_details,
               createdAt: new Date(reaction.createdat).toISOString()
             });
             return map;
@@ -201,13 +217,33 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         }
     
         // Format messages with attached reactions
-        const formattedMessages = messages.map(msg => ({
-          ...msg,
-          mediaSize: msg.media_size,
-          reactions: reactionMap[msg.id] || [],
-          createdAt: new Date(msg.createdat).toISOString(),
-          updatedAt: new Date(msg.updatedat).toISOString()
-        }));
+        const formattedMessages = messages.map(msg => {
+          let displayImageUrl = msg.imageurl;
+          if (msg.moderation_status === 'rejected' || msg.moderation_status === 'failed') {
+            const reason = msg.moderation_details ? msg.moderation_details.substring(0, 30) : "policy";
+            displayImageUrl = `moderation_failed_[${reason}]`;
+          } else if (msg.imageurl === null && msg.original_imageurl && (msg.moderation_status === 'pending' || msg.moderation_status === 'approved')) {
+            // This case handles if webhook initially set imageurl to NULL for an approved/pending asset, we should use original
+            displayImageUrl = msg.original_imageurl;
+          }
+
+
+          return {
+            id: msg.id,
+            content: msg.content,
+            imageUrl: displayImageUrl,
+            shareableLink: msg.shareablelink,
+            passcode: msg.passcode,
+            viewed: msg.viewed,
+            reactionLength: msg.reaction_length,
+            mediaSize: msg.media_size,
+            moderationStatus: msg.moderation_status,
+            moderationDetails: msg.moderation_details,
+            reactions: reactionMap[msg.id] || [],
+            createdAt: new Date(msg.createdat).toISOString(),
+            updatedAt: new Date(msg.updatedat).toISOString()
+          };
+        });
     
         // Return final response
         res.status(200).json({
@@ -248,7 +284,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const { rows: messageRows } = await query('SELECT * FROM messages WHERE id = $1', [id]);
+    const { rows: messageRows } = await query('SELECT *, original_imageurl, moderation_status, moderation_details FROM messages WHERE id = $1', [id]);
     if (!messageRows.length) {
       res.status(404).json({ error: 'Message not found' });
       return;
@@ -261,12 +297,34 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       console.error('Failed to mark message as viewed:', err);
     });
 
-    const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdat ASC', [id]);
+    const { rows: reactions } = await query('SELECT *, original_videourl, moderation_status, moderation_details FROM reactions WHERE messageid = $1 ORDER BY createdat ASC', [id]);
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+
+      let displayVideoUrl = reaction.videourl;
+      let displayThumbnailUrl = reaction.thumbnailurl;
+      if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
+        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
+        displayVideoUrl = `moderation_failed_[${reason}]`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+      } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
+        displayVideoUrl = reaction.original_videourl;
+        // Potentially regenerate thumbnail URL if original_videourl is used and thumbnail was also nulled
+        // For simplicity, if original_videourl is present, we assume thumbnail should also be derived or taken from original if possible.
+        // This might need more sophisticated logic if thumbnail was also cleared by webhook and needs to be based on original_videourl.
+         displayThumbnailUrl = reaction.thumbnailurl; // or regenerate if necessary
+      }
+
       return {
-        ...reaction,
+        id: reaction.id,
+        messageid: reaction.messageid,
+        videourl: displayVideoUrl,
+        thumbnailurl: displayThumbnailUrl,
+        duration: reaction.duration,
+        name: reaction.name,
+        moderationStatus: reaction.moderation_status,
+        moderationDetails: reaction.moderation_details,
         createdAt: new Date(reaction.createdat).toISOString(),
         updatedAt: new Date(reaction.updatedat).toISOString(),
         replies: replies.map(reply => ({
@@ -277,9 +335,20 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       };
     }));
 
+    let displayImageUrl = message.imageurl;
+    if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
+      const reason = message.moderation_details ? message.moderation_details.substring(0, 30) : "policy";
+      displayImageUrl = `moderation_failed_[${reason}]`;
+    } else if (message.imageurl === null && message.original_imageurl && (message.moderation_status === 'pending' || message.moderation_status === 'approved')) {
+      displayImageUrl = message.original_imageurl;
+    }
+
     res.status(200).json({
-      ...message,
-      reaction_length: message.reaction_length, // Ensure reaction_length is in the response
+      ...message, // Spreads all fields from message row, including original_imageurl, db moderation_status, db moderation_details
+      imageUrl: displayImageUrl, // Overrides imageurl with potentially transformed one
+      moderationStatus: message.moderation_status, // Explicitly include for clarity, matches standardized naming
+      moderationDetails: message.moderation_details, // Explicitly include for clarity
+      reaction_length: message.reaction_length,
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
@@ -529,7 +598,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
   try {
     const { linkId } = req.params;
     const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
+    const { rows } = await query('SELECT *, original_imageurl, moderation_status, moderation_details FROM messages WHERE shareablelink = $1', [shareableLink]);
 
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
@@ -549,13 +618,23 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       return;
     }
 
+    let displayImageUrl = message.imageurl;
+    if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
+      const reason = message.moderation_details ? message.moderation_details.substring(0, 30) : "policy";
+      displayImageUrl = `moderation_failed_[${reason}]`;
+    } else if (message.imageurl === null && message.original_imageurl && (message.moderation_status === 'pending' || message.moderation_status === 'approved')) {
+      displayImageUrl = message.original_imageurl;
+    }
+
     res.status(200).json({
       id: message.id,
       content: message.content,
-      imageUrl: message.imageurl,
+      imageUrl: displayImageUrl,
       hasPasscode: false,
-      reaction_length: message.reaction_length, // Add reaction_length
+      reaction_length: message.reaction_length,
       mediaSize: message.media_size,
+      moderationStatus: message.moderation_status,
+      moderationDetails: message.moderation_details, // Consider summarizing if too verbose
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
@@ -573,7 +652,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
     const { passcode } = req.body;
 
     const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
+    const { rows } = await query('SELECT *, original_imageurl, moderation_status, moderation_details FROM messages WHERE shareablelink = $1', [shareableLink]);
 
     if (!rows.length) {
       res.status(404).json({ error: 'Message not found' });
@@ -592,15 +671,25 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
+    let displayImageUrl = message.imageurl;
+    if (message.moderation_status === 'rejected' || message.moderation_status === 'failed') {
+      const reason = message.moderation_details ? message.moderation_details.substring(0, 30) : "policy";
+      displayImageUrl = `moderation_failed_[${reason}]`;
+    } else if (message.imageurl === null && message.original_imageurl && (message.moderation_status === 'pending' || message.moderation_status === 'approved')) {
+      displayImageUrl = message.original_imageurl;
+    }
+
     res.status(200).json({
       verified: true,
       message: {
         id: message.id,
         content: message.content,
-        imageUrl: message.imageurl,
+        imageUrl: displayImageUrl,
         hasPasscode: true,
         passcodeVerified: true,
         mediaSize: message.media_size,
+        moderationStatus: message.moderation_status,
+        moderationDetails: message.moderation_details, // Consider summarizing
         createdAt: new Date(message.createdat).toISOString()
       }
     });
@@ -733,7 +822,7 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       const { id } = req.params;
   
       const { rows } = await query(
-        `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat
+        `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat, updatedat, original_videourl, moderation_status, moderation_details
          FROM reactions
          WHERE id = $1`,
         [id]
@@ -745,9 +834,30 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       }
   
       const reaction = rows[0];
+      let displayVideoUrl = reaction.videourl;
+      let displayThumbnailUrl = reaction.thumbnailurl;
+
+      if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
+        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
+        displayVideoUrl = `moderation_failed_[${reason}]`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+      } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
+        displayVideoUrl = reaction.original_videourl;
+        // Similar to getMessageById, thumbnail might need specific handling if original is used
+        displayThumbnailUrl = reaction.thumbnailurl;
+      }
+
       res.status(200).json({
-        ...reaction,
-        createdAt: new Date(reaction.createdat).toISOString()
+        id: reaction.id,
+        messageid: reaction.messageid,
+        videoUrl: displayVideoUrl,
+        thumbnailUrl: displayThumbnailUrl,
+        duration: reaction.duration,
+        name: reaction.name,
+        moderationStatus: reaction.moderation_status,
+        moderationDetails: reaction.moderation_details,
+        createdAt: new Date(reaction.createdat).toISOString(),
+        updatedAt: new Date(reaction.updatedat).toISOString()
       });
       return;
     } catch (error) {
@@ -916,12 +1026,14 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
 
   try {
     // Destructure new return values from uploadVideoToCloudinary
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
+    // Pass moderation parameter
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'reactions', 'aws_rek');
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
     await query(
       `UPDATE reactions
-       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW()
+       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW(),
+           original_videourl = $1, moderation_status = 'pending', moderation_details = NULL
        WHERE id = $4`,
       [actualVideoUrl, actualThumbnailUrl, duration, reactionId]
     );
@@ -953,21 +1065,36 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
 
   try {
     const { rows } = await query(
-      `SELECT id, videourl, thumbnailurl, duration, createdat, updatedat 
+      `SELECT id, videourl, thumbnailurl, duration, createdat, updatedat, name, original_videourl, moderation_status, moderation_details
        FROM reactions 
        WHERE messageid = $1 
        ORDER BY createdat ASC`,
       [messageId]
     );
 
-    const formattedReactions = rows.map(reaction => ({
-      id: reaction.id,
-      videoUrl: reaction.videourl,
-      thumbnailUrl: reaction.thumbnailurl,
-      duration: reaction.duration,
-      createdAt: new Date(reaction.createdat).toISOString(),
-      updatedAt: new Date(reaction.updatedat).toISOString()
-    }));
+    const formattedReactions = rows.map(reaction => {
+      let displayVideoUrl = reaction.videourl;
+      let displayThumbnailUrl = reaction.thumbnailurl;
+      if (reaction.moderation_status === 'rejected' || reaction.moderation_status === 'failed') {
+        const reason = reaction.moderation_details ? reaction.moderation_details.substring(0, 30) : "policy";
+        displayVideoUrl = `moderation_failed_[${reason}]`;
+        displayThumbnailUrl = `moderation_failed_thumbnail_[${reason}]`;
+      } else if (reaction.videourl === null && reaction.original_videourl && (reaction.moderation_status === 'pending' || reaction.moderation_status === 'approved')) {
+        displayVideoUrl = reaction.original_videourl;
+        displayThumbnailUrl = reaction.thumbnailurl;
+      }
+      return {
+        id: reaction.id,
+        videoUrl: displayVideoUrl,
+        thumbnailUrl: displayThumbnailUrl,
+        duration: reaction.duration,
+        name: reaction.name,
+        moderationStatus: reaction.moderation_status,
+        moderationDetails: reaction.moderation_details,
+        createdAt: new Date(reaction.createdat).toISOString(),
+        updatedAt: new Date(reaction.updatedat).toISOString()
+      };
+    });
 
     res.status(200).json(formattedReactions);
     return;
