@@ -223,7 +223,7 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, moderation) => {
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
     const dataUri = `${prefix}${base64Data}`;
 
-    const uploadOptions = {
+    const uploadOptions = { 
       resource_type: resourceType,
       folder: 'messages',
     };

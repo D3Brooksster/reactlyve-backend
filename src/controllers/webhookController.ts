@@ -19,7 +19,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
   try {
     const signature = req.headers['x-cld-signature'] as string;
     const timestampHeader = req.headers['x-cld-timestamp'] as string;
-
+    
     if (!(req.body instanceof Buffer)) {
       // This case should ideally not be hit if express.raw() is correctly configured for the route
       console.error("Webhook body is not a Buffer. Check middleware configuration.");
@@ -51,7 +51,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
       signature,          // 3rd: signature (string)
       oneHourInSeconds    // 4th: valid_for_seconds (number)
     );
-
+    
     if (!isValidSignature) {
       console.warn('Invalid Cloudinary webhook signature.');
       res.status(401).json({ error: 'Invalid signature' });
@@ -85,7 +85,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
       internalStatus = 'failed';
       moderationDetailsText = JSON.stringify(moderationResponse || { error: 'Cloudinary moderation process failed' });
     }
-
+    
     console.log(`Processing webhook for public_id: ${public_id}, status: ${internalStatus}, resource_type: ${resource_type}`);
 
     let dbResult;
@@ -97,7 +97,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
       // For now, using LIKE based on the subtask description, but this might need refinement
       // if original_imageurl is just the public_id, then `original_imageurl = $3` would be better.
       dbResult = await query(
-        `UPDATE messages
+        `UPDATE messages 
          SET moderation_status = $1, moderation_details = $2, imageurl = CASE WHEN $1 = 'approved' THEN original_imageurl ELSE NULL END
          WHERE original_imageurl LIKE '%' || $3 || '%'
          RETURNING id;`,
@@ -110,7 +110,7 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
       }
     } else if (resource_type === 'video' && public_id) {
       dbResult = await query(
-        `UPDATE reactions
+        `UPDATE reactions 
          SET moderation_status = $1, moderation_details = $2, videourl = CASE WHEN $1 = 'approved' THEN original_videourl ELSE NULL END
          WHERE original_videourl LIKE '%' || $3 || '%'
          RETURNING id;`,
@@ -130,6 +130,6 @@ export const handleCloudinaryModerationWebhook = async (req: Request, res: Respo
   } catch (error: any) {
     console.error('Error handling Cloudinary webhook:', error);
     // Pass the error to the Express error handling middleware
-    next(error);
+    next(error); 
   }
 };

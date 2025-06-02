@@ -117,7 +117,7 @@ describe('handleCloudinaryModerationWebhook', () => {
       (query as jest.Mock).mockResolvedValue({ rowCount: 1, rows: [{ id: 'message_id_2' }] });
 
       await handleCloudinaryModerationWebhook(mockRequest as Request, mockResponse as Response, jest.fn());
-
+      
       expect(query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE messages'),
         ['rejected', JSON.stringify(payload.moderation_response.moderation_labels), payload.public_id]
@@ -167,7 +167,7 @@ describe('handleCloudinaryModerationWebhook', () => {
       expect(mockStatus).toHaveBeenCalledWith(200);
       expect(mockJson).toHaveBeenCalledWith({ message: 'Webhook received and processed' });
     });
-
+    
     it('should return 200 if moderation_status is pending', async () => {
       const payload = {
         public_id: 'test_pending',
@@ -216,7 +216,7 @@ describe('handleCloudinaryModerationWebhook', () => {
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining(`No message found with original_imageurl containing public_id: ${payload.public_id}`));
       expect(mockStatus).toHaveBeenCalledWith(200);
       expect(mockJson).toHaveBeenCalledWith({ message: 'Webhook received and processed' });
-
+      
       consoleLogSpy.mockRestore();
     });
   });

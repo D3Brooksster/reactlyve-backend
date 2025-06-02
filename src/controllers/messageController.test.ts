@@ -95,7 +95,7 @@ describe('Message Controller GET Endpoints', () => {
         moderationStatus: 'approved',
       }));
     });
-
+    
     it('should return reaction with original URL if moderation_status is pending', async () => {
       const reactionData = {
         id: 'reaction-id-3',
