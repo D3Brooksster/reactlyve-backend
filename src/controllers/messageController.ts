@@ -70,6 +70,48 @@ export const sendMessage = (req: Request, res: Response) => {
     }
 
     try {
+      // ---- START MESSAGE LIMIT LOGIC ----
+      const currentDate = new Date();
+      let needsDbUpdateForReset = false;
+
+      if (!user.last_usage_reset_date ||
+          (user.last_usage_reset_date.getMonth() !== currentDate.getMonth() ||
+           user.last_usage_reset_date.getFullYear() !== currentDate.getFullYear())) {
+
+        console.log(`Resetting usage for user ${user.id}. Last reset: ${user.last_usage_reset_date}`);
+        user.current_messages_this_month = 0;
+        user.current_reactions_this_month = 0; // Reset reactions count as well
+        user.last_usage_reset_date = currentDate;
+        needsDbUpdateForReset = true;
+      }
+
+      // Perform DB update for reset if needed
+      if (needsDbUpdateForReset) {
+        try {
+          await query(
+            'UPDATE users SET current_messages_this_month = 0, current_reactions_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
+            [user.id]
+          );
+          console.log(`Successfully reset usage in DB for user ${user.id}`);
+        } catch (resetError) {
+          console.error('Error resetting user usage data in database:', resetError);
+          // Decide if this is a fatal error. For now, we'll log and continue,
+          // but the counts might be off. Alternatively, return a 500 error.
+          // res.status(500).json({ error: 'Failed to update user usage data.' });
+          // return;
+        }
+      }
+
+      // Check message limit
+      if (user.max_messages_per_month !== null &&
+          user.max_messages_per_month >= 0 &&
+          user.current_messages_this_month !== null && // ensure current_messages_this_month is not null
+          user.current_messages_this_month >= user.max_messages_per_month) {
+        res.status(403).json({ error: 'Message limit reached for this month.' });
+        return;
+      }
+      // ---- END MESSAGE LIMIT LOGIC ----
+
       const { content, passcode, reaction_length } = req.body; // Extract reaction_length
       const senderId = user.id; // Use user.id from the asserted user
 
@@ -113,6 +155,29 @@ export const sendMessage = (req: Request, res: Response) => {
       );
 
       const message = rows[0];
+
+      // ---- START INCREMENT MESSAGE COUNT ----
+      try {
+        await query(
+          'UPDATE users SET current_messages_this_month = current_messages_this_month + 1 WHERE id = $1',
+          [user.id]
+        );
+        // Optionally update in-memory user object if it's used later in the same request flow
+        if (user.current_messages_this_month !== null) { // Check if it's not null before incrementing
+             user.current_messages_this_month += 1;
+        } else {
+             user.current_messages_this_month = 1; // If it was null, start with 1
+        }
+        console.log(`Successfully incremented message count for user ${user.id}`);
+      } catch (incrementError) {
+        console.error('Error incrementing user message count in database:', incrementError);
+        // This is a critical error as it can lead to incorrect billing or limits.
+        // Depending on policy, you might want to "rollback" the message insertion
+        // or at least flag this user for manual review.
+        // For now, just log, but the message is already sent.
+      }
+      // ---- END INCREMENT MESSAGE COUNT ----
+
       res.status(201).json({
         id: message.id,
         senderId: message.senderid,
@@ -615,20 +680,89 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { name } = req.body; // Added name
+    const { id: paramId } = req.params; // paramId is messageId or shareable link part
+    const { name } = req.body;
+    const user = req.user as AppUser;
+
+    if (!user) { // Should be caught by requireAuth
+        res.status(401).json({ error: 'Authentication required to record reactions.' });
+        return;
+    }
+
+    // ---- START USER USAGE LIMIT LOGIC (Reactions) ----
+    const currentDate = new Date();
+    let needsDbUpdateForReset = false;
+
+    // Monthly Reset Logic for the authenticated user
+    if (!user.last_usage_reset_date ||
+        (new Date(user.last_usage_reset_date).getMonth() !== currentDate.getMonth() ||
+         new Date(user.last_usage_reset_date).getFullYear() !== currentDate.getFullYear())) {
+
+      console.log(`Resetting usage for user ${user.id} (in recordReaction). Last reset: ${user.last_usage_reset_date}`);
+      user.current_messages_this_month = 0;
+      user.current_reactions_this_month = 0;
+      user.last_usage_reset_date = new Date(currentDate.toISOString());
+      needsDbUpdateForReset = true;
+    }
+
+    if (needsDbUpdateForReset) {
+      try {
+        await query(
+          'UPDATE users SET current_messages_this_month = 0, current_reactions_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
+          [user.id]
+        );
+        console.log(`Successfully reset usage in DB for user ${user.id} (in recordReaction)`);
+      } catch (resetError) {
+        console.error('Error resetting user usage data in database (in recordReaction):', resetError);
+        res.status(500).json({ error: 'Failed to update user usage data. Please try again.' });
+        return;
+      }
+    }
+
+    // Fetch the actual message ID using paramId
+    const messageQueryResult = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [paramId, `%${paramId}%`]);
+    if (!messageQueryResult.rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+    const messageId = messageQueryResult.rows[0].id; // This is the actual messageId for which reaction is recorded
+
+    // Per-Message Reaction Limit Check
+    // Ensure max_reactions_per_message is a number and >= 0 before checking
+    if (typeof user.max_reactions_per_message === 'number' && user.max_reactions_per_message >= 0) {
+        const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [messageId]);
+        const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
+        if (current_reaction_count_for_message >= user.max_reactions_per_message) {
+            res.status(403).json({ error: 'Reaction limit reached for this message.' });
+            return;
+        }
+    }
+
+    // User's Monthly Reaction Limit Check
+    // Ensure current_reactions_this_month is a number (default to 0 if null/undefined)
+    const currentReactionsThisMonth = user.current_reactions_this_month ?? 0;
+    // Ensure max_reactions_per_month is a number and >= 0 before checking
+    if (typeof user.max_reactions_per_month === 'number' && user.max_reactions_per_month >= 0) {
+        if (currentReactionsThisMonth >= user.max_reactions_per_month) {
+            res.status(403).json({ error: 'You have reached your monthly reaction limit.' });
+            return;
+        }
+    }
+    // ---- END USER USAGE LIMIT LOGIC ----
+
     if (!req.file) {
       res.status(400).json({ error: 'No reaction video provided' });
       return;
     }
 
-    const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [id, `%${id}`]);
-    if (!rows.length) {
-      res.status(404).json({ error: 'Message not found' });
-      return;
-    }
+    // Message existence already checked, and messageId is the actual UUID.
+    // const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [paramId, `%${paramId}%`]); // Redundant
+    // if (!rows.length) { // Redundant
+    //   res.status(404).json({ error: 'Message not found' });
+    //   return;
+    // }
+    // const messageId = rows[0].id; // Already defined as actualMessageId
 
-    const messageId = rows[0].id;
     // Destructure new return values from uploadVideoToCloudinary
     const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
@@ -647,9 +781,29 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
 
     if (inserted.length > 0 && inserted[0].id) {
       // Update isreply status of the parent message
-      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => { // Ensure using correct messageId
         console.error('Failed to update isreply for message after reaction:', err);
       });
+
+      // ---- START INCREMENT USER'S MONTHLY REACTION COUNT ----
+      try {
+        await query(
+          'UPDATE users SET current_reactions_this_month = current_reactions_this_month + 1 WHERE id = $1',
+          [user.id]
+        );
+        // Update in-memory user object
+        if (typeof user.current_reactions_this_month === 'number') {
+            user.current_reactions_this_month += 1;
+        } else {
+            user.current_reactions_this_month = 1; // Initialize if it was null/undefined
+        }
+        console.log(`Successfully incremented reaction count for user ${user.id}`);
+      } catch (incrementError) {
+        console.error('Error incrementing user reaction count in database:', incrementError);
+        // Log and continue. The reaction is recorded, but count might be off.
+        // Consider if this should be a more critical error.
+      }
+      // ---- END INCREMENT USER'S MONTHLY REACTION COUNT ----
     }
 
     res.status(201).json({

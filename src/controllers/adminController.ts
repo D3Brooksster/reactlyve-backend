@@ -191,3 +191,81 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
 //     return null;
 //   }
 // };
+
+export const setUserLimits = async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const {
+    max_messages_per_month,
+    max_reactions_per_month,
+    max_reactions_per_message
+  } = req.body;
+
+  // Basic validation
+  if (max_messages_per_month !== undefined && typeof max_messages_per_month !== 'number') {
+    return res.status(400).json({ error: 'Invalid max_messages_per_month, must be a number or null.' });
+  }
+  if (max_reactions_per_month !== undefined && typeof max_reactions_per_month !== 'number') {
+    return res.status(400).json({ error: 'Invalid max_reactions_per_month, must be a number or null.' });
+  }
+  if (max_reactions_per_message !== undefined && typeof max_reactions_per_message !== 'number') {
+    return res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
+  }
+
+  try {
+    const fieldsToUpdate: string[] = [];
+    const values: any[] = [];
+    let queryParamIndex = 1;
+
+    // For nullable fields, explicitly allow null to unset the limit
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_messages_per_month')) {
+      fieldsToUpdate.push(`max_messages_per_month = $${queryParamIndex++}`);
+      values.push(max_messages_per_month);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_month')) {
+      fieldsToUpdate.push(`max_reactions_per_month = $${queryParamIndex++}`);
+      values.push(max_reactions_per_month);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
+      fieldsToUpdate.push(`max_reactions_per_message = $${queryParamIndex++}`);
+      values.push(max_reactions_per_message);
+    }
+
+    if (fieldsToUpdate.length === 0) {
+      return res.status(400).json({ error: 'No limit fields provided for update. To unset a limit, pass null.' });
+    }
+
+    fieldsToUpdate.push(`updated_at = NOW()`); // Also update the updated_at timestamp
+
+    values.push(userId);
+    const updateUserQuery = `UPDATE users SET ${fieldsToUpdate.join(', ')} WHERE id = $${queryParamIndex} RETURNING *;`;
+
+    const { rows } = await query(updateUserQuery, values);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found or update failed.' });
+    }
+    // Return all fields of the updated user, as fetched by RETURNING *
+    const updatedUser = rows[0] as AppUser;
+    res.status(200).json({ message: 'User limits updated successfully.', user: updatedUser });
+  } catch (error) {
+    console.error('Error setting user limits:', error);
+    res.status(500).json({ error: 'Failed to set user limits.' });
+  }
+};
+
+export const getUserDetails = async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  try {
+    // Fetch all fields, including the new limit fields
+    const { rows } = await query('SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login, max_messages_per_month, max_reactions_per_month, current_messages_this_month, current_reactions_this_month, last_usage_reset_date, max_reactions_per_message FROM users WHERE id = $1', [userId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    // Cast to AppUser to ensure type safety, though SELECT * should fetch all defined columns.
+    // If password hashes or other overly sensitive data were on this table, they should be explicitly omitted.
+    const user = rows[0] as AppUser;
+    res.status(200).json(user);
+  } catch (error) {
+    console.error('Error getting user details:', error);
+    res.status(500).json({ error: 'Failed to get user details.' });
+  }
+};
