@@ -28,7 +28,14 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     role: user.role,
     createdAt: user.created_at ? new Date(user.created_at).toISOString() : null, // Map created_at to createdAt
     updatedAt: user.updated_at ? new Date(user.updated_at).toISOString() : null, // Map updated_at to updatedAt
-    blocked: user.blocked
+    blocked: user.blocked,
+    // New limit and usage fields
+    maxMessagesPerMonth: user.max_messages_per_month ?? null,
+    currentMessagesThisMonth: user.current_messages_this_month ?? null,
+    maxReactionsPerMonth: user.max_reactions_per_month ?? null,
+    currentReactionsThisMonth: user.current_reactions_this_month ?? null,
+    lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null,
+    maxReactionsPerMessage: user.max_reactions_per_message ?? null
   });
   return;
 };

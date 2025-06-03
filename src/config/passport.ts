@@ -47,12 +47,25 @@ passport.use(new GoogleStrategy(
         return done(null, updatedUsers[0] as AppUser); // Changed User to AppUser
       }
 
-      // 2) Insert new user with role 'guest' and last_login
+      // 2) Insert new user with role 'guest' and last_login and default limits
       const newUserResult = await query(
-        `INSERT INTO users (google_id, email, name, picture, role, last_login)
-         VALUES ($1, $2, $3, $4, 'guest', NOW())
+        `INSERT INTO users (
+           google_id, email, name, picture, role, last_login,
+           max_messages_per_month, current_messages_this_month,
+           max_reactions_per_month, current_reactions_this_month,
+           max_reactions_per_message, last_usage_reset_date
+         )
+         VALUES ($1, $2, $3, $4, 'guest', NOW(), $5, $6, $7, $8, $9, $10)
          RETURNING *`,
-        [google_id, email, name, picture]
+        [
+          google_id, email, name, picture,
+          3,    // max_messages_per_month
+          0,    // current_messages_this_month
+          9,    // max_reactions_per_month
+          0,    // current_reactions_this_month
+          3,    // max_reactions_per_message
+          '2999-01-19T00:00:00Z' // last_usage_reset_date
+        ]
       );
 
       return done(null, newUserResult.rows[0] as AppUser); // Changed User to AppUser

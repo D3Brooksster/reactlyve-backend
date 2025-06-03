@@ -70,37 +70,46 @@ export const sendMessage = (req: Request, res: Response) => {
     }
 
     try {
-      // ---- START MESSAGE LIMIT LOGIC ----
-      const currentDate = new Date();
-      let needsDbUpdateForReset = false;
+      // ---- START REFINED MONTHLY RESET LOGIC ----
+      const now = new Date();
+      let needsReset = false;
 
-      if (!user.last_usage_reset_date ||
-          (user.last_usage_reset_date.getMonth() !== currentDate.getMonth() ||
-           user.last_usage_reset_date.getFullYear() !== currentDate.getFullYear())) {
+      if (user.last_usage_reset_date === null || user.last_usage_reset_date === undefined) {
+        needsReset = true;
+      } else {
+        const resetDate = new Date(user.last_usage_reset_date);
+        if (!isNaN(resetDate.getTime())) {
+          const resetYear = resetDate.getFullYear();
+          const resetMonth = resetDate.getMonth();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth();
 
-        console.log(`Resetting usage for user ${user.id}. Last reset: ${user.last_usage_reset_date}`);
-        user.current_messages_this_month = 0;
-        user.current_reactions_this_month = 0; // Reset reactions count as well
-        user.last_usage_reset_date = currentDate;
-        needsDbUpdateForReset = true;
+          if (resetYear < currentYear || (resetYear === currentYear && resetMonth < currentMonth)) {
+            needsReset = true;
+          }
+        } else {
+          console.error(`User ${user.id} has an invalid last_usage_reset_date in sendMessage: ${user.last_usage_reset_date}`);
+          needsReset = true;
+        }
       }
 
-      // Perform DB update for reset if needed
-      if (needsDbUpdateForReset) {
+      if (needsReset) {
+        console.log(`Performing monthly usage reset for user ${user.id} in sendMessage. Last reset: ${user.last_usage_reset_date}`);
         try {
           await query(
             'UPDATE users SET current_messages_this_month = 0, current_reactions_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
             [user.id]
           );
-          console.log(`Successfully reset usage in DB for user ${user.id}`);
+          user.current_messages_this_month = 0;
+          user.current_reactions_this_month = 0;
+          user.last_usage_reset_date = now; // Update in-memory user object
+          console.log(`Successfully reset usage in DB for user ${user.id} (sendMessage)`);
         } catch (resetError) {
-          console.error('Error resetting user usage data in database:', resetError);
-          // Decide if this is a fatal error. For now, we'll log and continue,
-          // but the counts might be off. Alternatively, return a 500 error.
-          // res.status(500).json({ error: 'Failed to update user usage data.' });
-          // return;
+          console.error('Error resetting user usage data in database (sendMessage):', resetError);
+          // Log and continue, but counts might be off. Consider if this should be fatal.
         }
       }
+      // ---- END REFINED MONTHLY RESET LOGIC ----
 
       // Check message limit
       // If max_messages_per_month is undefined, null, or negative, it means no limit.
@@ -687,35 +696,47 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
         return;
     }
 
-    // ---- START USER USAGE LIMIT LOGIC (Reactions) ----
-    const currentDate = new Date();
-    let needsDbUpdateForReset = false;
+    // ---- START REFINED MONTHLY RESET LOGIC (Reactions) ----
+    const now = new Date(); // Renamed from currentDate for clarity with new logic
+    let needsReset = false; // Renamed from needsDbUpdateForReset
 
-    // Monthly Reset Logic for the authenticated user
-    if (!user.last_usage_reset_date ||
-        (new Date(user.last_usage_reset_date).getMonth() !== currentDate.getMonth() ||
-         new Date(user.last_usage_reset_date).getFullYear() !== currentDate.getFullYear())) {
+    if (user.last_usage_reset_date === null || user.last_usage_reset_date === undefined) {
+      needsReset = true;
+    } else {
+      const resetDate = new Date(user.last_usage_reset_date);
+      if (!isNaN(resetDate.getTime())) {
+        const resetYear = resetDate.getFullYear();
+        const resetMonth = resetDate.getMonth();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
 
-      console.log(`Resetting usage for user ${user.id} (in recordReaction). Last reset: ${user.last_usage_reset_date}`);
-      user.current_messages_this_month = 0;
-      user.current_reactions_this_month = 0;
-      user.last_usage_reset_date = new Date(currentDate.toISOString());
-      needsDbUpdateForReset = true;
+        if (resetYear < currentYear || (resetYear === currentYear && resetMonth < currentMonth)) {
+          needsReset = true;
+        }
+      } else {
+        console.error(`User ${user.id} has an invalid last_usage_reset_date in recordReaction: ${user.last_usage_reset_date}`);
+        needsReset = true;
+      }
     }
 
-    if (needsDbUpdateForReset) {
+    if (needsReset) {
+      console.log(`Performing monthly usage reset for user ${user.id} in recordReaction. Last reset: ${user.last_usage_reset_date}`);
       try {
         await query(
           'UPDATE users SET current_messages_this_month = 0, current_reactions_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
           [user.id]
         );
-        console.log(`Successfully reset usage in DB for user ${user.id} (in recordReaction)`);
+        user.current_messages_this_month = 0;
+        user.current_reactions_this_month = 0;
+        user.last_usage_reset_date = now; // Update in-memory user object
+        console.log(`Successfully reset usage in DB for user ${user.id} (recordReaction)`);
       } catch (resetError) {
-        console.error('Error resetting user usage data in database (in recordReaction):', resetError);
-        res.status(500).json({ error: 'Failed to update user usage data. Please try again.' });
+        console.error('Error resetting user usage data in database (recordReaction):', resetError);
+        res.status(500).json({ error: 'Failed to update user usage data. Please try again.' }); // Critical for reactions
         return;
       }
     }
+    // ---- END REFINED MONTHLY RESET LOGIC (Reactions) ----
 
     // Fetch the actual message ID using paramId
     const messageQueryResult = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [paramId, `%${paramId}%`]);
