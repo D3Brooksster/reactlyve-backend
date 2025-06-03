@@ -64,11 +64,6 @@ export const sendMessage = (req: Request, res: Response) => {
 
     const user = req.user as AppUser; // Assert type to access role
 
-    if (user.role === 'guest') {
-      res.status(403).json({ error: 'Guests are not authorized to send messages. Please wait for admin approval.' });
-      return;
-    }
-
     try {
       // ---- START REFINED MONTHLY RESET LOGIC ----
       const now = new Date();
