@@ -197,7 +197,8 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   const {
     max_messages_per_month,
     max_reactions_per_month,
-    max_reactions_per_message
+    max_reactions_per_message,
+    last_usage_reset_date // Added
   } = req.body;
 
   // Basic validation
@@ -212,6 +213,14 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   if (max_reactions_per_message !== undefined && typeof max_reactions_per_message !== 'number') {
     res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
     return;
+  }
+
+  // Validate last_usage_reset_date (if provided and not null)
+  if (last_usage_reset_date !== undefined && last_usage_reset_date !== null) {
+    if (typeof last_usage_reset_date !== 'string' || isNaN(new Date(last_usage_reset_date).getTime())) {
+      res.status(400).json({ error: 'Invalid last_usage_reset_date format. Please use a valid ISO date string or null.' });
+      return;
+    }
   }
 
   try {
@@ -233,6 +242,19 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
       values.push(max_reactions_per_message);
     }
 
+    // Add last_usage_reset_date to update if provided
+    if (Object.prototype.hasOwnProperty.call(req.body, 'last_usage_reset_date')) {
+      if (last_usage_reset_date === null) {
+        fieldsToUpdate.push(`last_usage_reset_date = $${queryParamIndex++}`);
+        values.push(null);
+      } else if (typeof last_usage_reset_date === 'string') { // Validation ensures it's a valid date string here
+        fieldsToUpdate.push(`last_usage_reset_date = $${queryParamIndex++}`);
+        values.push(last_usage_reset_date);
+      }
+      // No need for an else here as validation should have caught invalid non-null strings
+    }
+
+    // Check if any fields are being updated AFTER potentially adding last_usage_reset_date
     if (fieldsToUpdate.length === 0) {
       res.status(400).json({ error: 'No limit fields provided for update. To unset a limit, pass null.' });
       return;
@@ -251,6 +273,7 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     // Return all fields of the updated user, as fetched by RETURNING *
     const updatedUser = rows[0] as AppUser;
     res.status(200).json({ message: 'User limits updated successfully.', user: updatedUser });
+    // No explicit return needed here as it's the end of the try block and function.
   } catch (error) {
     console.error('Error setting user limits:', error);
     res.status(500).json({ error: 'Failed to set user limits.' });
