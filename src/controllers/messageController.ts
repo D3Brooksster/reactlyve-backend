@@ -103,10 +103,12 @@ export const sendMessage = (req: Request, res: Response) => {
       }
 
       // Check message limit
-      if (user.max_messages_per_month !== null &&
+      // If max_messages_per_month is undefined, null, or negative, it means no limit.
+      // Only check if max_messages_per_month is a non-negative number.
+      const currentMessages = user.current_messages_this_month ?? 0;
+      if (typeof user.max_messages_per_month === 'number' &&
           user.max_messages_per_month >= 0 &&
-          user.current_messages_this_month !== null && // ensure current_messages_this_month is not null
-          user.current_messages_this_month >= user.max_messages_per_month) {
+          currentMessages >= user.max_messages_per_month) {
         res.status(403).json({ error: 'Message limit reached for this month.' });
         return;
       }
@@ -163,11 +165,7 @@ export const sendMessage = (req: Request, res: Response) => {
           [user.id]
         );
         // Optionally update in-memory user object if it's used later in the same request flow
-        if (user.current_messages_this_month !== null) { // Check if it's not null before incrementing
-             user.current_messages_this_month += 1;
-        } else {
-             user.current_messages_this_month = 1; // If it was null, start with 1
-        }
+        user.current_messages_this_month = (user.current_messages_this_month ?? 0) + 1;
         console.log(`Successfully incremented message count for user ${user.id}`);
       } catch (incrementError) {
         console.error('Error incrementing user message count in database:', incrementError);
@@ -728,10 +726,11 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const messageId = messageQueryResult.rows[0].id; // This is the actual messageId for which reaction is recorded
 
     // Per-Message Reaction Limit Check
-    // Ensure max_reactions_per_message is a number and >= 0 before checking
+    // If max_reactions_per_message is undefined, null, or negative, it means no limit.
+    // Only check if max_reactions_per_message is a non-negative number.
     if (typeof user.max_reactions_per_message === 'number' && user.max_reactions_per_message >= 0) {
         const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [messageId]);
-        const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
+        const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10); // This will be a number
         if (current_reaction_count_for_message >= user.max_reactions_per_message) {
             res.status(403).json({ error: 'Reaction limit reached for this message.' });
             return;
@@ -739,9 +738,9 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
 
     // User's Monthly Reaction Limit Check
-    // Ensure current_reactions_this_month is a number (default to 0 if null/undefined)
+    // If max_reactions_per_month is undefined, null, or negative, it means no limit.
+    // Only check if max_reactions_per_month is a non-negative number.
     const currentReactionsThisMonth = user.current_reactions_this_month ?? 0;
-    // Ensure max_reactions_per_month is a number and >= 0 before checking
     if (typeof user.max_reactions_per_month === 'number' && user.max_reactions_per_month >= 0) {
         if (currentReactionsThisMonth >= user.max_reactions_per_month) {
             res.status(403).json({ error: 'You have reached your monthly reaction limit.' });
@@ -792,11 +791,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
           [user.id]
         );
         // Update in-memory user object
-        if (typeof user.current_reactions_this_month === 'number') {
-            user.current_reactions_this_month += 1;
-        } else {
-            user.current_reactions_this_month = 1; // Initialize if it was null/undefined
-        }
+        user.current_reactions_this_month = (user.current_reactions_this_month ?? 0) + 1;
         console.log(`Successfully incremented reaction count for user ${user.id}`);
       } catch (incrementError) {
         console.error('Error incrementing user reaction count in database:', incrementError);
