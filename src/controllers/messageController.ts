@@ -92,11 +92,11 @@ export const sendMessage = (req: Request, res: Response) => {
         console.log(`Performing monthly usage reset for user ${user.id} in sendMessage. Last reset: ${user.last_usage_reset_date}`);
         try {
           await query(
-            'UPDATE users SET current_messages_this_month = 0, current_reactions_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
+            'UPDATE users SET current_messages_this_month = 0, reactions_received_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
             [user.id]
           );
           user.current_messages_this_month = 0;
-          user.current_reactions_this_month = 0;
+          user.reactions_received_this_month = 0; // Corrected property name
           user.last_usage_reset_date = now; // Update in-memory user object
           console.log(`Successfully reset usage in DB for user ${user.id} (sendMessage)`);
         } catch (resetError) {
