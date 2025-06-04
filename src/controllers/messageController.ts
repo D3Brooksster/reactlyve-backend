@@ -739,92 +739,13 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const messageSender: AppUser = senderResult.rows[0] as AppUser; // This is the SENDER of the message
     console.log("[RecordReactionLog] Fetched messageSender (before reset check):", JSON.stringify(messageSender));
 
-    // === REACTOR (Reaction Author) LIMITS AND DETAILS ===
-    // Fetch full details for the reactor to check their own limits
-    const reactorDetailsQuery = await query(
-      `SELECT id, max_reactions_authored_per_month, reactions_authored_this_month, last_usage_reset_date
-       FROM users WHERE id = $1`,
-      [reactor.id]
-    );
-
-    if (reactorDetailsQuery.rows.length === 0) {
-      console.error(`[RecordReactionLog] CRITICAL: Reactor user (ID: ${reactor.id}) not found in database, though authenticated.`);
-      res.status(500).json({ error: 'Failed to retrieve your user details.' });
-      return;
-    }
-    // Update the reactor object with full details from DB for limit checking
-    const reactorDbDetails: AppUser = reactorDetailsQuery.rows[0] as AppUser;
-    // It's safer to create a new object or selectively update reactor,
-    // to avoid polluting req.user if it's used elsewhere with stale data.
-    // For this flow, we'll use reactorDbDetails for limit checks.
-    console.log("[RecordReactionLog] Fetched reactorDbDetails (before reset check):", JSON.stringify(reactorDbDetails));
-
-    // Monthly Reset Logic for Reactor's Authored Reactions
-    const nowForReactor = new Date();
-    let reactorNeedsReset = false;
-    if (reactorDbDetails.last_usage_reset_date === null || reactorDbDetails.last_usage_reset_date === undefined) {
-      reactorNeedsReset = true;
-    } else {
-      const reactorResetDate = new Date(reactorDbDetails.last_usage_reset_date);
-      if (!isNaN(reactorResetDate.getTime())) {
-        const resetYear = reactorResetDate.getFullYear();
-        const resetMonth = reactorResetDate.getMonth();
-        const currentYear = nowForReactor.getFullYear();
-        const currentMonth = nowForReactor.getMonth();
-        if (resetYear < currentYear || (resetYear === currentYear && resetMonth < currentMonth)) {
-          reactorNeedsReset = true;
-        }
-      } else {
-        console.error(`[RecordReactionLog] Reactor ${reactorDbDetails.id} has an invalid last_usage_reset_date: ${reactorDbDetails.last_usage_reset_date}`);
-        reactorNeedsReset = true; // Treat invalid date as needing reset
-      }
-    }
-
-    if (reactorNeedsReset) {
-      console.log(`[RecordReactionLog] Performing monthly usage reset for reactor ${reactorDbDetails.id}. Last reset: ${reactorDbDetails.last_usage_reset_date}`);
-      try {
-        // IMPORTANT: This reset should ONLY affect reaction_authored counts if other counts (like messages_sent)
-        // are managed by a different reset trigger or if last_usage_reset_date is shared carefully.
-        // Assuming last_usage_reset_date is shared for all monthly user counts for simplicity here.
-        // If message sending also resets this date, then reactions_authored_this_month will also reset.
-        // This query also resets current_messages_this_month and reactions_received_this_month.
-        // If only reactions_authored_this_month should be reset, the query needs to be more specific
-        // OR a different last_reset_date field should be used for authoring limits.
-        // For now, assuming shared reset date:
-        const reactorResetResult = await query(
-          `UPDATE users SET reactions_authored_this_month = 0, current_messages_this_month = 0, reactions_received_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1 RETURNING reactions_authored_this_month, last_usage_reset_date, current_messages_this_month, reactions_received_this_month`,
-          [reactorDbDetails.id]
-        );
-        if (reactorResetResult.rows.length > 0) {
-          reactorDbDetails.reactions_authored_this_month = reactorResetResult.rows[0].reactions_authored_this_month;
-          reactorDbDetails.last_usage_reset_date = reactorResetResult.rows[0].last_usage_reset_date;
-          // Also update other counts if they were reset by the same query
-          reactorDbDetails.current_messages_this_month = reactorResetResult.rows[0].current_messages_this_month;
-          reactorDbDetails.reactions_received_this_month = reactorResetResult.rows[0].reactions_received_this_month;
-          console.log("[RecordReactionLog] Reactor after successful reset and in-memory update:", JSON.stringify(reactorDbDetails));
-        } else {
-          console.error(`[RecordReactionLog] CRITICAL: Failed to get RETURNING data for reactor ${reactorDbDetails.id} after reset attempt.`);
-          res.status(500).json({ error: 'Failed to confirm your usage data reset. Please try again.' });
-          return;
-        }
-      } catch (dbError) {
-        console.error(`[RecordReactionLog] Failed to reset monthly authored reaction count for reactor ${reactorDbDetails.id}:`, dbError);
-        res.status(500).json({ error: 'Failed to update your usage data.' });
-        return;
-      }
-    }
-
-    // Reactor's Monthly Authored Limit Check
-    const currentAuthored = reactorDbDetails.reactions_authored_this_month ?? 0;
-    const maxCanAuthor = reactorDbDetails.max_reactions_authored_per_month;
-    console.log("[RecordReactionLog] Checking reactor's monthly authored limit. currentAuthored:", currentAuthored, "maxCanAuthor:", maxCanAuthor);
-
-    if (typeof maxCanAuthor === 'number' && maxCanAuthor >= 0 && currentAuthored >= maxCanAuthor) {
-      console.log("[RecordReactionLog] Reactor monthly authored limit reached. Blocking reaction.");
-      res.status(403).json({ error: 'You have reached your reaction authoring limit for this month.' });
-      return;
-    }
-    // === END REACTOR LIMITS AND DETAILS ===
+    // === REACTOR (Reaction Author) AUTHENTICATION ALREADY VERIFIED ===
+    // The reactor's identity is confirmed by req.user.
+    // Specific limits for reaction authoring (max_reactions_authored_per_month, reactions_authored_this_month)
+    // have been removed from this function's logic.
+    // The reactor's general last_usage_reset_date might still be relevant if other actions
+    // performed by this user (not in this function) share that reset date. However,
+    // for the scope of recordReaction, no separate fetching or reset logic for reactor's own reaction counts is needed.
 
     // 3. Per-Message Limit Check (based on message's own max_reactions_allowed)
     if (typeof messageDetails.max_reactions_allowed === 'number' && messageDetails.max_reactions_allowed >= 0) {
@@ -944,20 +865,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
         // Log and continue
       }
 
-      // Increment Reactor's reactions_authored_this_month
-      try {
-        const newAuthoredCount = (reactorDbDetails.reactions_authored_this_month ?? 0) + 1;
-        // console.log("[RecordReactionLog] Attempting to increment reactor's reactions_authored_this_month. Reactor ID:", reactorDbDetails.id, "Current value in object:", reactorDbDetails.reactions_authored_this_month, "Calculated new value:", newAuthoredCount); // Verbose
-        await query(
-          "UPDATE users SET reactions_authored_this_month = (COALESCE(reactions_authored_this_month, 0) + 1) WHERE id = $1",
-          [reactorDbDetails.id]
-        );
-        // console.log("[RecordReactionLog] Update reactor's reactions_authored_this_month DB result. Row count:", updateReactorResult?.rowCount ?? 'N/A'); // Verbose
-        reactorDbDetails.reactions_authored_this_month = newAuthoredCount; // Update in-memory object
-      } catch (incrementError) {
-        console.error(`[RecordReactionLog] Error incrementing reactor's reactions_authored_this_month for user ${reactorDbDetails.id}:`, incrementError);
-        // Log and continue
-      }
+      // Incrementing Reactor's reactions_authored_this_month is REMOVED.
 
       // Update isreply status of the parent message (existing logic)
       query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId]).catch(err => {
