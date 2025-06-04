@@ -837,7 +837,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
           "UPDATE users SET reactions_received_this_month = (COALESCE(reactions_received_this_month, 0) + 1) WHERE id = $1",
           [messageSender.id]
         );
-        console.log("[RecordReactionLog] Successfully updated sender's reactions_received_this_month in DB. Result:", updateResult.rowCount > 0 ? 'Success' : 'No rows updated');
+        console.log("[RecordReactionLog] Update sender's reactions_received_this_month DB result. Row count:", updateResult?.rowCount ?? 'N/A');
         // Update in-memory object for consistency
         messageSender.reactions_received_this_month = newReceivedCount;
       } catch (incrementError) {
