@@ -683,6 +683,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 };
 
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
+  console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
   try {
     const { id: messageId_param } = req.params; // Message ID or shareable link part
     const { name } = req.body; // Name for the reaction (optional)
@@ -705,6 +706,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const messageDetails = messageResult.rows[0];
     const actualMessageId = messageDetails.actual_message_id;
     const messageSenderId = messageDetails.senderid;
+    console.log("[RecordReactionLog] Fetched messageDetails:", { id: actualMessageId, senderid: messageSenderId, max_reactions_allowed: messageDetails.max_reactions_allowed });
 
     // 2. Fetch Message Sender's Details
     const senderQueryText = `
@@ -727,13 +729,16 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     // Cast to AppUser, but be mindful it only has fields selected above.
     // For operations on messageSender, ensure you're using these explicitly selected fields.
     const messageSender: AppUser = senderResult.rows[0] as AppUser;
+    console.log("[RecordReactionLog] Fetched messageSender (before reset check):", JSON.stringify(messageSender));
 
 
     // 3. Per-Message Limit Check (based on message's own max_reactions_allowed)
     if (typeof messageDetails.max_reactions_allowed === 'number' && messageDetails.max_reactions_allowed >= 0) {
       const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [actualMessageId]);
       const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
+      console.log("[RecordReactionLog] Checking per-message limit. currentOnMessage:", current_reaction_count_for_message, "maxAllowedOnMessage:", messageDetails.max_reactions_allowed);
       if (current_reaction_count_for_message >= messageDetails.max_reactions_allowed) {
+        console.log("[RecordReactionLog] Per-message limit reached. Blocking reaction.");
         res.status(403).json({ error: 'Reaction limit reached for this message.' });
         return;
       }
@@ -743,6 +748,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     // Apply Monthly Reset Logic for the Sender
     const now = new Date();
     let needsReset = false;
+    console.log("[RecordReactionLog] Before sender monthly reset. needsReset:", needsReset, "Sender last_usage_reset_date:", messageSender.last_usage_reset_date); // Log before the main if/else
     if (messageSender.last_usage_reset_date === null || messageSender.last_usage_reset_date === undefined) {
       needsReset = true;
     } else {
@@ -760,9 +766,13 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
         needsReset = true;
       }
     }
+    // Log needsReset status determined by the if/else block, before the actual reset block.
+    // This was the intended location for the "Before sender monthly reset" log based on prompt structure.
+    // However, since needsReset is determined inside the if/else, for clarity, we can log it before the if(needsReset) block.
+    // The log above serves a similar purpose.
 
     if (needsReset) {
-      console.log(`Resetting monthly received reaction count for sender ${messageSender.id}`);
+      console.log("[RecordReactionLog] Sender needs reset. Attempting DB update for sender:", messageSender.id);
       try {
         // This reset affects both message and reaction counts as they share last_usage_reset_date.
         const resetResult = await query(
@@ -777,8 +787,9 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
             messageSender.last_usage_reset_date = updatedSender.last_usage_reset_date;
         } else {
             // Should not happen if sender ID is valid
-             console.error(`Failed to get RETURNING data for sender ${messageSender.id} after reset.`);
+             console.error(`[RecordReactionLog] Failed to get RETURNING data for sender ${messageSender.id} after reset.`);
         }
+        console.log("[RecordReactionLog] MessageSender after reset logic (DB updated if needed):", JSON.stringify(messageSender));
       } catch (dbError) {
         console.error(`Failed to reset monthly counts for sender ${messageSender.id}:`, dbError);
         res.status(500).json({ error: 'Failed to update sender usage data.' });
@@ -788,9 +799,12 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
 
     // Check Limit for sender receiving reactions
     const currentReceived = messageSender.reactions_received_this_month ?? 0;
-    if (typeof messageSender.max_reactions_per_month === 'number' &&
-        messageSender.max_reactions_per_month >= 0 &&
-        currentReceived >= messageSender.max_reactions_per_month) {
+    const maxCanReceive = messageSender.max_reactions_per_month;
+    console.log("[RecordReactionLog] Checking sender's monthly received limit. currentReceived:", currentReceived, "maxCanReceive:", maxCanReceive);
+    if (typeof maxCanReceive === 'number' &&
+        maxCanReceive >= 0 &&
+        currentReceived >= maxCanReceive) {
+      console.log("[RecordReactionLog] Sender monthly received limit reached. Blocking reaction.");
       res.status(403).json({ error: 'This user can no longer receive reactions this month (limit reached).' });
       return;
     }
@@ -815,15 +829,19 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
 
     // 6. Increment Sender's `reactions_received_this_month`
     if (inserted.length > 0 && inserted[0].id) {
+      console.log("[RecordReactionLog] Reaction successfully inserted. Reaction ID:", inserted[0].id);
       try {
-        await query(
+        const newReceivedCount = (messageSender.reactions_received_this_month ?? 0) + 1;
+        console.log("[RecordReactionLog] Attempting to increment sender's reactions_received_this_month. Sender ID:", messageSender.id, "Current value in object:", messageSender.reactions_received_this_month, "Calculated new value:", newReceivedCount);
+        const updateResult = await query(
           "UPDATE users SET reactions_received_this_month = (COALESCE(reactions_received_this_month, 0) + 1) WHERE id = $1",
           [messageSender.id]
         );
-        // Update in-memory object for consistency, though not strictly needed if not used further in this request
-        messageSender.reactions_received_this_month = (messageSender.reactions_received_this_month ?? 0) + 1;
+        console.log("[RecordReactionLog] Successfully updated sender's reactions_received_this_month in DB. Result:", updateResult.rowCount > 0 ? 'Success' : 'No rows updated');
+        // Update in-memory object for consistency
+        messageSender.reactions_received_this_month = newReceivedCount;
       } catch (incrementError) {
-        console.error(`Error incrementing sender's reactions_received_this_month for user ${messageSender.id}:`, incrementError);
+        console.error(`[RecordReactionLog] Error incrementing sender's reactions_received_this_month for user ${messageSender.id}:`, incrementError);
         // Log and continue; reaction is recorded, but sender's count might be off.
       }
       // Update isreply status of the parent message (existing logic)
