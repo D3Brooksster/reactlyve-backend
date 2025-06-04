@@ -820,6 +820,8 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
           "UPDATE users SET reactions_received_this_month = (COALESCE(reactions_received_this_month, 0) + 1) WHERE id = $1",
           [messageSender.id]
         );
+        // Update in-memory object for consistency, though not strictly needed if not used further in this request
+        messageSender.reactions_received_this_month = (messageSender.reactions_received_this_month ?? 0) + 1;
       } catch (incrementError) {
         console.error(`Error incrementing sender's reactions_received_this_month for user ${messageSender.id}:`, incrementError);
         // Log and continue; reaction is recorded, but sender's count might be off.
