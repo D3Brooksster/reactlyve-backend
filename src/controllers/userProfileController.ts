@@ -31,11 +31,11 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     blocked: user.blocked,
     // New limit and usage fields
     maxMessagesPerMonth: user.max_messages_per_month ?? null,
-    currentMessagesThisMonth: user.current_messages_this_month ?? null,
-    maxReactionsPerMonth: user.max_reactions_per_month ?? null,
-    currentReactionsThisMonth: user.current_reactions_this_month ?? null,
+    currentMessagesThisMonth: user.current_messages_this_month ?? null, // For messages sent by user
+    maxReactionsPerMonth: user.max_reactions_per_month ?? null, // Max reactions user's messages can receive
+    reactionsReceivedThisMonth: user.reactions_received_this_month ?? 0, // Reactions received by user's messages
     lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null,
-    maxReactionsPerMessage: user.max_reactions_per_message ?? null
+    maxReactionsPerMessage: user.max_reactions_per_message ?? null // Max reactions per message for messages sent by user
   });
   return;
 };

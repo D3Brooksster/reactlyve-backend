@@ -12,7 +12,7 @@ export interface AppUser { // Renamed from User to AppUser
   max_messages_per_month?: number;
   max_reactions_per_month?: number;
   current_messages_this_month?: number;
-  current_reactions_this_month?: number;
+  reactions_received_this_month?: number; // Added
   last_usage_reset_date?: Date;
   max_reactions_per_message?: number;
 }

@@ -52,7 +52,7 @@ passport.use(new GoogleStrategy(
         `INSERT INTO users (
            google_id, email, name, picture, role, last_login,
            max_messages_per_month, current_messages_this_month,
-           max_reactions_per_month, current_reactions_this_month,
+           max_reactions_per_month, reactions_received_this_month, -- Changed column name
            max_reactions_per_message, last_usage_reset_date
          )
          VALUES ($1, $2, $3, $4, 'guest', NOW(), $5, $6, $7, $8, $9, $10)

@@ -284,16 +284,50 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
 export const getUserDetails = async (req: Request, res: Response): Promise<void> => {
   const { userId } = req.params;
   try {
-    // Fetch all fields, including the new limit fields
-    const { rows } = await query('SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login, max_messages_per_month, max_reactions_per_month, current_messages_this_month, current_reactions_this_month, last_usage_reset_date, max_reactions_per_message FROM users WHERE id = $1', [userId]);
+    // Fetch all relevant fields, including the new and modified ones
+    const selectQuery = `
+      SELECT
+        id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
+        max_messages_per_month, current_messages_this_month,
+        max_reactions_per_month, reactions_received_this_month, -- Updated field
+        last_usage_reset_date, max_reactions_per_message
+      FROM users
+      WHERE id = $1`;
+    const { rows } = await query(selectQuery, [userId]);
+
     if (rows.length === 0) {
       res.status(404).json({ error: 'User not found.' });
       return;
     }
-    // Cast to AppUser to ensure type safety, though SELECT * should fetch all defined columns.
-    // If password hashes or other overly sensitive data were on this table, they should be explicitly omitted.
-    const user = rows[0] as AppUser;
-    res.status(200).json(user);
+
+    const user = rows[0] as AppUser; // Still cast, but now we are more explicit about selection
+
+    // Construct the response object explicitly
+    res.status(200).json({
+      id: user.id,
+      googleId: user.google_id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      role: user.role,
+      blocked: user.blocked,
+      createdAt: user.created_at ? new Date(user.created_at).toISOString() : null,
+      updatedAt: user.updated_at ? new Date(user.updated_at).toISOString() : null,
+      lastLogin: user.last_login ? new Date(user.last_login).toISOString() : null,
+
+      maxMessagesPerMonth: user.max_messages_per_month ?? null,
+      currentMessagesThisMonth: user.current_messages_this_month ?? 0,
+
+      // max_reactions_per_month now refers to the limit on reactions a user's messages can receive
+      maxReactionsPerMonth: user.max_reactions_per_month ?? null,
+      // reactions_received_this_month is the new counter for reactions received by user's messages
+      reactionsReceivedThisMonth: user.reactions_received_this_month ?? 0,
+
+      // max_reactions_per_message is the limit on reactions per message for messages created by this user
+      maxReactionsPerMessage: user.max_reactions_per_message ?? null,
+
+      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null
+    });
     return;
   } catch (error) {
     console.error('Error getting user details:', error);
