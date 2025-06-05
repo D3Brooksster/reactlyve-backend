@@ -748,12 +748,20 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     // for the scope of recordReaction, no separate fetching or reset logic for reactor's own reaction counts is needed.
 
     // 3. Per-Message Limit Check (based on message's own max_reactions_allowed)
+    console.log("[PerMessageLimitDebug] Processing messageId:", actualMessageId);
     if (typeof messageDetails.max_reactions_allowed === 'number' && messageDetails.max_reactions_allowed >= 0) {
+      console.log("[PerMessageLimitDebug] Fetched max_reactions_allowed for message:", messageDetails.max_reactions_allowed);
       const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [actualMessageId]);
       const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
-      console.log("[RecordReactionLog] Checking per-message limit. currentOnMessage:", current_reaction_count_for_message, "maxAllowedOnMessage:", messageDetails.max_reactions_allowed);
-      if (current_reaction_count_for_message >= messageDetails.max_reactions_allowed) {
-        console.log("[RecordReactionLog] Per-message limit reached. Blocking reaction.");
+      console.log("[PerMessageLimitDebug] Current reaction count for message:", current_reaction_count_for_message);
+
+      const isLimitExceeded = current_reaction_count_for_message >= messageDetails.max_reactions_allowed;
+      console.log("[PerMessageLimitDebug] Is limit exceeded condition (count >= max_allowed):", isLimitExceeded);
+      // console.log("[RecordReactionLog] Checking per-message limit. currentOnMessage:", current_reaction_count_for_message, "maxAllowedOnMessage:", messageDetails.max_reactions_allowed); // Old log, can be removed or kept
+
+      if (isLimitExceeded) {
+        console.log("[PerMessageLimitDebug] Per-message limit reached. Blocking reaction.");
+        // console.log("[RecordReactionLog] Per-message limit reached. Blocking reaction."); // Old log
         res.status(403).json({ error: 'Reaction limit reached for this message.' });
         return;
       }
