@@ -715,20 +715,13 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     }
     const messageDetails = messageResult.rows[0];
     const actualMessageId = messageDetails.actual_message_id; // This is the true UUID of the message
-    // messageSenderId is available from messageDetails.senderid if needed for other logic, but not for limits here.
+    // messageSenderId is available from messageDetails.senderid for updating 'isreply' via actualMessageId.
     console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
 
-    // === REMOVED: Fetch Message Sender's Details for limit checking ===
-    // === REMOVED: Sender's Monthly Usage Reset Logic ===
-    // === REMOVED: Check Sender's Monthly Received Reactions Limit ===
+    // Limit checks (sender and per-message) are now handled by initReaction.
+    // Reactor authentication is handled by middleware.
+    // This function now directly proceeds to file upload and reaction recording.
 
-    // === REACTOR (Reaction Author) AUTHENTICATION ALREADY VERIFIED by requireAuth middleware ===
-    // No specific reactor limits are checked in this function anymore.
-
-    // === REMOVED: Per-Message Limit Check ===
-    // All [PerMessageLimitDebug] and related [RecordReactionLog] console logs are removed along with this logic.
-
-    // Proceed with Reaction Recording (video upload and DB insert/update)
     if (!req.file) {
       console.log("[RecordReactionLog] No reaction video provided.");
       res.status(400).json({ error: 'No reaction video provided' });
@@ -756,21 +749,24 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
 
       // Update isreply status of the parent message (existing logic)
-      query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId]).catch(err => {
-        console.error('Failed to update isreply for message after reaction:', err);
-      });
-    }
+      query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId])
+        .then(() => console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`))
+        .catch(err => console.error(`[RecordReactionLog] Failed to update isreply for message ${actualMessageId}:`, err));
 
-    res.status(201).json({
-      success: true,
-      message: 'Reaction recorded successfully',
-      reactionId: inserted[0].id
-    });
+      res.status(201).json({
+        success: true,
+        message: 'Reaction recorded successfully',
+        reactionId: newReactionId
+      });
+    } else {
+      console.error("[RecordReactionLog] Failed to insert reaction or retrieve ID after upload for messageId:", actualMessageId);
+      res.status(500).json({ error: 'Failed to save reaction details to database.' });
+    }
     return;
 
   } catch (error) {
-    console.error('Error recording reaction:', error);
-    res.status(500).json({ error: 'Failed to record reaction' });
+    console.error('[RecordReactionLog] Error during reaction recording process:', error);
+    res.status(500).json({ error: 'Failed to record reaction due to a server error.' });
     return;
   }
 };
@@ -1113,9 +1109,15 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     if (name) {
       queryParams.push(name);
     }
-    const { rows: inserted } = await query(insertQuery, queryParams);
 
-    if (inserted.length > 0 && inserted[0].id) {
+    // Declare inserted variable to ensure it's in scope
+    let inserted: any[] = [];
+    const queryResult = await query(insertQuery, queryParams);
+    if (queryResult && queryResult.rows) {
+      inserted = queryResult.rows;
+    }
+
+    if (inserted && inserted.length > 0 && inserted[0].id) {
       const newReactionId = inserted[0].id;
       console.log("[InitReactionLog] New reaction inserted with ID:", newReactionId);
 
