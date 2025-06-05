@@ -1024,7 +1024,6 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     }
 
     if (needsReset) {
-      console.log(`[InitReactionLimits] Sender ${messageSender.id} needs monthly reset.`);
       try {
         const resetResult = await query(
          `UPDATE users SET current_messages_this_month = 0, reactions_received_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1 RETURNING *`,
@@ -1051,28 +1050,22 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     // 4. Check Sender's Monthly Received Reactions Limit
     const currentReceived = messageSender.reactions_received_this_month ?? 0;
     const maxCanReceive = messageSender.max_reactions_per_month;
-    console.log(`[InitReactionLimits] Sender ${messageSender.id} - Received this month: ${currentReceived}, Max allowed: ${maxCanReceive}`);
     if (typeof maxCanReceive === 'number' &&
         maxCanReceive >= 0 &&
         currentReceived >= maxCanReceive) {
-      console.log("[InitReactionLog] Sender monthly received limit reached. Blocking reaction init.");
+      console.log("[InitReactionLog] Sender monthly received limit reached. Blocking reaction init."); // Retained: Operational log
       res.status(403).json({ error: 'This user can no longer receive reactions this month (limit reached).' });
       return;
     }
 
     // 5. Check Per-Message Reaction Limit
-    console.log("[PerMessageLimitDebug][InitReaction] Processing messageId:", messageId);
     if (typeof messageDetails.max_reactions_allowed === 'number' && messageDetails.max_reactions_allowed >= 0) {
-      console.log("[PerMessageLimitDebug][InitReaction] Fetched max_reactions_allowed for message:", messageDetails.max_reactions_allowed);
       const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [messageId]);
       const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
-      console.log("[PerMessageLimitDebug][InitReaction] Current reaction count for message:", current_reaction_count_for_message);
-
       const isLimitExceeded = current_reaction_count_for_message >= messageDetails.max_reactions_allowed;
-      console.log("[PerMessageLimitDebug][InitReaction] Is limit exceeded condition (count >= max_allowed):", isLimitExceeded);
 
       if (isLimitExceeded) {
-        console.log("[InitReactionLog] Per-message limit reached. Blocking reaction init.");
+        console.log("[InitReactionLog] Per-message limit reached. Blocking reaction init."); // Retained: Operational log
         res.status(403).json({ error: 'Reaction limit reached for this message.' });
         return;
       }
