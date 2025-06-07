@@ -1,6 +1,6 @@
 // src/routes/userProfileRoutes.ts
 import { Router } from 'express';
-import { getMyProfile, deleteMyAccount } from '../controllers/userProfileController';
+import { getMyProfile, deleteMyAccount, updateMyProfile } from '../controllers/userProfileController';
 import { requireAuth } from '../middlewares/middleware'; // Assuming requireAdmin is not needed here
 
 const router = Router();
@@ -15,5 +15,10 @@ router.get('/me', requireAuth, getMyProfile);
 // @desc    Delete current user's account
 // @access  Private
 router.delete('/me', requireAuth, deleteMyAccount);
+
+// @route   PUT /api/profile/me
+// @desc    Update current user's profile (e.g., lastUsageResetDate)
+// @access  Private
+router.put('/me', requireAuth, updateMyProfile);
 
 export default router;

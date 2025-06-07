@@ -131,9 +131,7 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       // 6. Cloudinary Deletion
       if (messageImageUrl) {
         try {
-          console.log(`Admin: Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
           await deleteFromCloudinary(messageImageUrl);
-          console.log(`Admin: Successfully deleted message image: ${messageImageUrl}`);
         } catch (cloudinaryError) {
           console.error(`Admin: Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
           // Do not re-throw, allow the process to continue
@@ -143,9 +141,7 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       for (const videoUrl of reactionVideoUrls) {
         if (videoUrl) {
           try {
-            console.log(`Admin: Attempting to delete reaction video from Cloudinary: ${videoUrl}`);
             await deleteFromCloudinary(videoUrl);
-            console.log(`Admin: Successfully deleted reaction video: ${videoUrl}`);
           } catch (cloudinaryError) {
             console.error(`Admin: Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
             // Do not re-throw, allow the process to continue
@@ -191,3 +187,152 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
 //     return null;
 //   }
 // };
+
+export const setUserLimits = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const {
+    max_messages_per_month,
+    max_reactions_per_month,
+    max_reactions_per_message,
+    last_usage_reset_date // Added
+  } = req.body;
+
+  // Basic validation
+  if (max_messages_per_month !== undefined && max_messages_per_month !== null && typeof max_messages_per_month !== 'number') {
+    res.status(400).json({ error: 'Invalid max_messages_per_month, must be a number or null.' });
+    return;
+  }
+  if (max_reactions_per_month !== undefined && max_reactions_per_month !== null && typeof max_reactions_per_month !== 'number') {
+    res.status(400).json({ error: 'Invalid max_reactions_per_month, must be a number or null.' });
+    return;
+  }
+  if (max_reactions_per_message !== undefined && max_reactions_per_message !== null && typeof max_reactions_per_message !== 'number') {
+    res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
+    return;
+  }
+
+  // Validate last_usage_reset_date (if provided and not null)
+  if (last_usage_reset_date !== undefined && last_usage_reset_date !== null) {
+    if (typeof last_usage_reset_date !== 'string' || isNaN(new Date(last_usage_reset_date).getTime())) {
+      res.status(400).json({ error: 'Invalid last_usage_reset_date format. Please use a valid ISO date string or null.' });
+      return;
+    }
+  }
+
+  try {
+    const fieldsToUpdate: string[] = [];
+    const values: any[] = [];
+    let queryParamIndex = 1;
+
+    // For nullable fields, explicitly allow null to unset the limit
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_messages_per_month')) {
+      fieldsToUpdate.push(`max_messages_per_month = $${queryParamIndex++}`);
+      values.push(max_messages_per_month);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_month')) {
+      fieldsToUpdate.push(`max_reactions_per_month = $${queryParamIndex++}`);
+      values.push(max_reactions_per_month);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
+      fieldsToUpdate.push(`max_reactions_per_message = $${queryParamIndex++}`);
+      values.push(max_reactions_per_message);
+    }
+
+    // Add last_usage_reset_date to update if provided
+    if (Object.prototype.hasOwnProperty.call(req.body, 'last_usage_reset_date')) {
+      if (last_usage_reset_date === null) {
+        fieldsToUpdate.push(`last_usage_reset_date = $${queryParamIndex++}`);
+        values.push(null);
+      } else if (typeof last_usage_reset_date === 'string') { // Validation ensures it's a valid date string here
+        fieldsToUpdate.push(`last_usage_reset_date = $${queryParamIndex++}`);
+        values.push(last_usage_reset_date);
+      }
+      // No need for an else here as validation should have caught invalid non-null strings
+    }
+
+    // Check if any fields are being updated AFTER potentially adding last_usage_reset_date
+    if (fieldsToUpdate.length === 0) {
+      res.status(400).json({ error: 'No limit fields provided for update. To unset a limit, pass null.' });
+      return;
+    }
+
+    fieldsToUpdate.push(`updated_at = NOW()`); // Also update the updated_at timestamp
+
+    values.push(userId);
+    const updateUserQuery = `UPDATE users SET ${fieldsToUpdate.join(', ')} WHERE id = $${queryParamIndex} RETURNING *;`;
+
+    const { rows } = await query(updateUserQuery, values);
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'User not found or update failed.' });
+      return;
+    }
+    // Return all fields of the updated user, as fetched by RETURNING *
+    const updatedUser = rows[0] as AppUser;
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
+      await query('UPDATE messages SET max_reactions_allowed = $1 WHERE senderid = $2', [req.body.max_reactions_per_message, userId]);
+    }
+
+    res.status(200).json({ message: 'User limits updated successfully.', user: updatedUser });
+    // No explicit return needed here as it's the end of the try block and function.
+  } catch (error) {
+    console.error('Error setting user limits:', error);
+    res.status(500).json({ error: 'Failed to set user limits.' });
+    return;
+  }
+};
+
+export const getUserDetails = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  try {
+    // Fetch all relevant fields, including the new and modified ones
+    const selectQuery = `
+      SELECT
+        id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
+        max_messages_per_month, current_messages_this_month,
+        max_reactions_per_month, reactions_received_this_month, -- Updated field
+        last_usage_reset_date, max_reactions_per_message
+      FROM users
+      WHERE id = $1`;
+    const { rows } = await query(selectQuery, [userId]);
+
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    const user = rows[0] as AppUser; // Still cast, but now we are more explicit about selection
+
+    // Construct the response object explicitly
+    res.status(200).json({
+      id: user.id,
+      googleId: user.google_id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      role: user.role,
+      blocked: user.blocked,
+      createdAt: user.created_at ? new Date(user.created_at).toISOString() : null,
+      updatedAt: user.updated_at ? new Date(user.updated_at).toISOString() : null,
+      lastLogin: user.last_login ? new Date(user.last_login).toISOString() : null,
+
+      maxMessagesPerMonth: user.max_messages_per_month ?? null,
+      currentMessagesThisMonth: user.current_messages_this_month ?? 0,
+
+      // max_reactions_per_month now refers to the limit on reactions a user's messages can receive
+      maxReactionsPerMonth: user.max_reactions_per_month ?? null,
+      // reactions_received_this_month is the new counter for reactions received by user's messages
+      reactionsReceivedThisMonth: user.reactions_received_this_month ?? 0,
+
+      // max_reactions_per_message is the limit on reactions per message for messages created by this user
+      maxReactionsPerMessage: user.max_reactions_per_message ?? null,
+
+      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null
+    });
+    return;
+  } catch (error) {
+    console.error('Error getting user details:', error);
+    res.status(500).json({ error: 'Failed to get user details.' });
+    return;
+  }
+};

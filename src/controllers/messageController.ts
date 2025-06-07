@@ -64,14 +64,63 @@ export const sendMessage = (req: Request, res: Response) => {
 
     const user = req.user as AppUser; // Assert type to access role
 
-    if (user.role === 'guest') {
-      res.status(403).json({ error: 'Guests are not authorized to send messages. Please wait for admin approval.' });
-      return;
-    }
-
     try {
+      // ---- START REFINED MONTHLY RESET LOGIC ----
+      const now = new Date();
+      let needsReset = false;
+
+      if (user.last_usage_reset_date === null || user.last_usage_reset_date === undefined) {
+        needsReset = true;
+      } else {
+        const resetDate = new Date(user.last_usage_reset_date);
+        if (!isNaN(resetDate.getTime())) {
+          const resetYear = resetDate.getFullYear();
+          const resetMonth = resetDate.getMonth();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth();
+
+          if (resetYear < currentYear || (resetYear === currentYear && resetMonth < currentMonth)) {
+            needsReset = true;
+          }
+        } else {
+          console.error(`User ${user.id} has an invalid last_usage_reset_date in sendMessage: ${user.last_usage_reset_date}`);
+          needsReset = true;
+        }
+      }
+
+      if (needsReset) {
+        console.log(`Performing monthly usage reset for user ${user.id} in sendMessage. Last reset: ${user.last_usage_reset_date}`);
+        try {
+          await query(
+            'UPDATE users SET current_messages_this_month = 0, reactions_received_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1',
+            [user.id]
+          );
+          user.current_messages_this_month = 0;
+          user.reactions_received_this_month = 0; // Corrected property name
+          user.last_usage_reset_date = now; // Update in-memory user object
+          console.log(`Successfully reset usage in DB for user ${user.id} (sendMessage)`);
+        } catch (resetError) {
+          console.error('Error resetting user usage data in database (sendMessage):', resetError);
+          // Log and continue, but counts might be off. Consider if this should be fatal.
+        }
+      }
+      // ---- END REFINED MONTHLY RESET LOGIC ----
+
+      // Check message limit
+      // If max_messages_per_month is undefined, null, or negative, it means no limit.
+      // Only check if max_messages_per_month is a non-negative number.
+      const currentMessages = user.current_messages_this_month ?? 0;
+      if (typeof user.max_messages_per_month === 'number' &&
+          user.max_messages_per_month >= 0 &&
+          currentMessages >= user.max_messages_per_month) {
+        res.status(403).json({ error: 'Message limit reached for this month.' });
+        return;
+      }
+      // ---- END MESSAGE LIMIT LOGIC ----
+
       const { content, passcode, reaction_length } = req.body; // Extract reaction_length
       const senderId = user.id; // Use user.id from the asserted user
+      const maxReactionsAllowedForMessage = user.max_reactions_per_message; // Get from user settings
 
       // Validate reaction_length
       let validatedReactionLength = 15; // Default value
@@ -107,12 +156,31 @@ export const sendMessage = (req: Request, res: Response) => {
       const mediaSize = req.file ? req.file.size : null;
 
       const { rows } = await query(
-        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize]
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size, max_reactions_allowed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, maxReactionsAllowedForMessage]
       );
 
       const message = rows[0];
+
+      // ---- START INCREMENT MESSAGE COUNT ----
+      try {
+        await query(
+          'UPDATE users SET current_messages_this_month = current_messages_this_month + 1 WHERE id = $1',
+          [user.id]
+        );
+        // Optionally update in-memory user object if it's used later in the same request flow
+        user.current_messages_this_month = (user.current_messages_this_month ?? 0) + 1;
+        console.log(`Successfully incremented message count for user ${user.id}`);
+      } catch (incrementError) {
+        console.error('Error incrementing user message count in database:', incrementError);
+        // This is a critical error as it can lead to incorrect billing or limits.
+        // Depending on policy, you might want to "rollback" the message insertion
+        // or at least flag this user for manual review.
+        // For now, just log, but the message is already sent.
+      }
+      // ---- END INCREMENT MESSAGE COUNT ----
+
       res.status(201).json({
         id: message.id,
         senderId: message.senderid,
@@ -121,7 +189,8 @@ export const sendMessage = (req: Request, res: Response) => {
         mediaType: message.mediatype,
         mediaSize: message.media_size,
         shareableLink: message.shareablelink,
-        reactionLength: message.reaction_length, // Add reaction_length to response
+        reactionLength: message.reaction_length,
+        maxReactionsAllowed: message.max_reactions_allowed, // Include new field in response
         createdAt: new Date(message.createdat).toISOString(),
         updatedAt: new Date(message.updatedat).toISOString()
       });
@@ -166,7 +235,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size, max_reactions_allowed
            FROM messages 
            WHERE senderid = $1 
            ORDER BY createdat DESC 
@@ -201,13 +270,24 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         }
     
         // Format messages with attached reactions
-        const formattedMessages = messages.map(msg => ({
-          ...msg,
-          mediaSize: msg.media_size,
-          reactions: reactionMap[msg.id] || [],
-          createdAt: new Date(msg.createdat).toISOString(),
-          updatedAt: new Date(msg.updatedat).toISOString()
-        }));
+        const formattedMessages = messages.map(msg => {
+          const reactions_used = (reactionMap[msg.id] || []).length;
+          let reactions_remaining: number | null = null;
+
+          if (msg.max_reactions_allowed !== null && msg.max_reactions_allowed !== undefined) {
+            reactions_remaining = Math.max(0, msg.max_reactions_allowed - reactions_used);
+          }
+
+          return {
+            ...msg,
+            mediaSize: msg.media_size,
+            reactions: reactionMap[msg.id] || [],
+            reactions_used,
+            reactions_remaining,
+            createdAt: new Date(msg.createdat).toISOString(),
+            updatedAt: new Date(msg.updatedat).toISOString()
+          };
+        });
     
         // Return final response
         res.status(200).json({
@@ -263,6 +343,13 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
 
     const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdat ASC', [id]);
 
+    const reactions_used = reactions.length;
+    let reactions_remaining: number | null = null;
+
+    if (message.max_reactions_allowed !== null && message.max_reactions_allowed !== undefined) {
+      reactions_remaining = Math.max(0, message.max_reactions_allowed - reactions_used);
+    }
+
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
       return {
@@ -283,7 +370,9 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
-      reactions: reactionsWithReplies
+      reactions: reactionsWithReplies,
+      reactions_used,
+      reactions_remaining
     });
     return;
 
@@ -614,54 +703,90 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 };
 
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
+  console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
   try {
-    const { id } = req.params;
-    const { name } = req.body; // Added name
+    // === REACTION AUTHOR (REACTOR) CHECK ===
+    if (!req.user) {
+      console.warn("[RecordReactionLog] Attempt to record reaction without authentication.");
+      res.status(401).json({ error: 'Authentication required to record reactions.' });
+      return;
+    }
+    const reactor = req.user as AppUser; // Authenticated user recording the reaction
+    console.log("[RecordReactionLog] Reaction author (reactor) ID:", reactor.id);
+
+    const { id: messageId_param } = req.params; // Message ID or shareable link part
+    const { name } = req.body; // Name for the reaction (optional)
+
+    // 1. Fetch Message Details (primarily to resolve shareable link to actual ID, and get senderid for isreply update)
+    // Limits (per-message, sender's monthly) are now assumed to be handled by initReaction.
+    const messageQueryText = `
+      SELECT
+        id AS actual_message_id,
+        senderid
+        -- max_reactions_allowed is no longer needed here for limit checks
+      FROM messages
+      WHERE id = $1 OR shareablelink LIKE $2`;
+    const messageResult = await query(messageQueryText, [messageId_param, `%${messageId_param}%`]);
+
+    if (messageResult.rows.length === 0) {
+      console.log(`[RecordReactionLog] Message not found for param: ${messageId_param}`);
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    const messageDetails = messageResult.rows[0];
+    const actualMessageId = messageDetails.actual_message_id; // This is the true UUID of the message
+    // messageSenderId is available from messageDetails.senderid for updating 'isreply' via actualMessageId.
+    console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
+
+    // Limit checks (sender and per-message) are now handled by initReaction.
+    // Reactor authentication is handled by middleware.
+    // This function now directly proceeds to file upload and reaction recording.
+
     if (!req.file) {
+      console.log("[RecordReactionLog] No reaction video provided.");
       res.status(400).json({ error: 'No reaction video provided' });
       return;
     }
 
-    const { rows } = await query('SELECT id FROM messages WHERE id = $1 OR shareablelink LIKE $2', [id, `%${id}`]);
-    if (!rows.length) {
-      res.status(404).json({ error: 'Message not found' });
-      return;
-    }
-
-    const messageId = rows[0].id;
-    // Destructure new return values from uploadVideoToCloudinary
     const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
-    const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
+    const durationInSeconds = videoDuration !== null ? Math.round(videoDuration) : 0;
+    console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
 
-    const queryText = `
+    const reactionInsertQuery = `
       INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''})
       VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}) RETURNING id`;
-    
-    // Use actualVideoUrl and actualThumbnailUrl in the query
-    const queryParams = [messageId, actualVideoUrl, actualThumbnailUrl, duration];
+    const reactionQueryParams = [actualMessageId, actualVideoUrl, actualThumbnailUrl, durationInSeconds];
     if (name) {
-      queryParams.push(name);
+      reactionQueryParams.push(name);
     }
+    const { rows: insertedReaction } = await query(reactionInsertQuery, reactionQueryParams);
 
-    const { rows: inserted } = await query(queryText, queryParams);
+    // REMOVED: Increment Sender's `reactions_received_this_month` (now handled by initReaction)
+    // REMOVED: Increment Reactor's `reactions_authored_this_month`
 
-    if (inserted.length > 0 && inserted[0].id) {
-      // Update isreply status of the parent message
-      query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
-        console.error('Failed to update isreply for message after reaction:', err);
+    if (insertedReaction.length > 0 && insertedReaction[0].id) {
+      const newReactionId = insertedReaction[0].id;
+      console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
+
+      // Update isreply status of the parent message (existing logic)
+      query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId])
+        .then(() => console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`))
+        .catch(err => console.error(`[RecordReactionLog] Failed to update isreply for message ${actualMessageId}:`, err));
+
+      res.status(201).json({
+        success: true,
+        message: 'Reaction recorded successfully',
+        reactionId: newReactionId
       });
+    } else {
+      console.error("[RecordReactionLog] Failed to insert reaction or retrieve ID after upload for messageId:", actualMessageId);
+      res.status(500).json({ error: 'Failed to save reaction details to database.' });
     }
-
-    res.status(201).json({
-      success: true,
-      message: 'Reaction recorded successfully',
-      reactionId: inserted[0].id
-    });
     return;
 
   } catch (error) {
-    console.error('Error recording reaction:', error);
-    res.status(500).json({ error: 'Failed to record reaction' });
+    console.error('[RecordReactionLog] Error during reaction recording process:', error);
+    res.status(500).json({ error: 'Failed to record reaction due to a server error.' });
     return;
   }
 };
@@ -842,40 +967,152 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
 };
 
 export const initReaction = async (req: Request, res: Response): Promise<void> => {
-  const { messageId } = req.params;
-  const { sessionid, name } = req.body; // Added name
+  const { messageId } = req.params; // This is actual_message_id
+  const { sessionid, name } = req.body;
 
-  console.log("Received sessionid:", sessionid);
-  
+  console.log("[InitReactionLog] Entering function. messageId:", messageId, "sessionid:", sessionid);
+
   if (!sessionid) {
-    res.status(400).json({ error: 'Missing session ID' });
-    return;
+    // Session ID is still crucial for the specific purpose of initReaction if it's meant to be idempotent per session
+    // However, if general limits are hit, this specific session check might be secondary.
+    // For now, let's keep this check early if it's a hard requirement for the endpoint's contract.
+    // Re-evaluating: The task asks for general limits to be checked first.
+    // So, sessionid check can be done later, or only if limits pass.
+    // For now, let's proceed with limit checks. SessionID will be used at insertion.
   }
 
   try {
-    // Verify message exists
-    const { rows: messageRows } = await query(
-      'SELECT id FROM messages WHERE id = $1',
-      [messageId]
-    );
-    if (!messageRows.length) {
-      res.status(404).json({ error: 'Message not found' });
+    // 1. Fetch Message Details (including senderid and max_reactions_allowed)
+    const messageQueryText = `
+      SELECT
+        id AS actual_message_id,
+        senderid,
+        max_reactions_allowed
+      FROM messages
+      WHERE id = $1`; // Using messageId directly as it's the UUID from params
+    const messageResult = await query(messageQueryText, [messageId]);
+
+    if (messageResult.rows.length === 0) {
+      console.log(`[InitReactionLog] Message not found for ID: ${messageId}`);
+      res.status(404).json({ error: 'Message not found.' });
+      return;
+    }
+    const messageDetails = messageResult.rows[0];
+    // actualMessageId is messageId from params
+    const messageSenderId = messageDetails.senderid;
+    console.log("[InitReactionLog] Fetched messageDetails:", { id: messageId, senderid: messageSenderId, max_reactions_allowed: messageDetails.max_reactions_allowed });
+
+    // 2. Fetch Message Sender's User Details
+    const senderQueryText = `
+      SELECT
+        id,
+        max_reactions_per_month,
+        reactions_received_this_month,
+        last_usage_reset_date,
+        current_messages_this_month -- needed for shared reset logic
+      FROM users
+      WHERE id = $1`;
+    const senderResult = await query(senderQueryText, [messageSenderId]);
+
+    if (senderResult.rows.length === 0) {
+      console.error(`[InitReactionLog] CRITICAL: Sender user not found for id: ${messageSenderId} (messageId: ${messageId})`);
+      res.status(500).json({ error: 'Failed to retrieve message sender details.' });
+      return;
+    }
+    const messageSender: AppUser = senderResult.rows[0] as AppUser;
+    console.log("[InitReactionLog] Fetched messageSender (before reset check):", JSON.stringify(messageSender));
+
+    // 3. Sender's Monthly Usage Reset Logic
+    const now = new Date();
+    let needsReset = false;
+    if (messageSender.last_usage_reset_date === null || messageSender.last_usage_reset_date === undefined) {
+      needsReset = true;
+    } else {
+      const resetDate = new Date(messageSender.last_usage_reset_date);
+      if (!isNaN(resetDate.getTime())) {
+        const resetYear = resetDate.getFullYear();
+        const resetMonth = resetDate.getMonth();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        if (resetYear < currentYear || (resetYear === currentYear && resetMonth < currentMonth)) {
+          needsReset = true;
+        }
+      } else {
+        console.error(`[InitReactionLog] Message sender ${messageSender.id} has an invalid last_usage_reset_date: ${messageSender.last_usage_reset_date}`);
+        needsReset = true;
+      }
+    }
+
+    if (needsReset) {
+      try {
+        const resetResult = await query(
+         `UPDATE users SET current_messages_this_month = 0, reactions_received_this_month = 0, last_usage_reset_date = NOW() WHERE id = $1 RETURNING *`,
+         [messageSender.id]
+        );
+        if (resetResult.rows.length > 0) {
+            const updatedSender = resetResult.rows[0];
+            messageSender.reactions_received_this_month = updatedSender.reactions_received_this_month;
+            messageSender.current_messages_this_month = updatedSender.current_messages_this_month;
+            messageSender.last_usage_reset_date = updatedSender.last_usage_reset_date;
+            console.log("[InitReactionLog] MessageSender after successful reset and in-memory update:", JSON.stringify(messageSender));
+        } else {
+            console.error(`[InitReactionLog] CRITICAL: Failed to get RETURNING data for sender ${messageSender.id} after reset attempt.`);
+            res.status(500).json({ error: 'Failed to confirm sender usage data reset. Please try again.' });
+            return;
+        }
+      } catch (dbError) {
+        console.error(`[InitReactionLog] Failed to reset monthly counts for sender ${messageSender.id}:`, dbError);
+        res.status(500).json({ error: 'Failed to update sender usage data.' });
+        return;
+      }
+    }
+
+    // 4. Check Sender's Monthly Received Reactions Limit
+    const currentReceived = messageSender.reactions_received_this_month ?? 0;
+    const maxCanReceive = messageSender.max_reactions_per_month;
+    if (typeof maxCanReceive === 'number' &&
+        maxCanReceive >= 0 &&
+        currentReceived >= maxCanReceive) {
+      console.log("[InitReactionLog] Sender monthly received limit reached. Blocking reaction init."); // Retained: Operational log
+      res.status(403).json({ error: 'This user can no longer receive reactions this month (limit reached).' });
       return;
     }
 
-    // Check for existing reaction by session
+    // 5. Check Per-Message Reaction Limit
+    if (typeof messageDetails.max_reactions_allowed === 'number' && messageDetails.max_reactions_allowed >= 0) {
+      const reactionCountResult = await query('SELECT COUNT(*) FROM reactions WHERE messageid = $1', [messageId]);
+      const current_reaction_count_for_message = parseInt(reactionCountResult.rows[0]?.count || '0', 10);
+      const isLimitExceeded = current_reaction_count_for_message >= messageDetails.max_reactions_allowed;
+
+      if (isLimitExceeded) {
+        console.log("[InitReactionLog] Per-message limit reached. Blocking reaction init."); // Retained: Operational log
+        res.status(403).json({ error: 'Reaction limit reached for this message.' });
+        return;
+      }
+    }
+
+    // 6. Existing Logic (Session ID check & Reaction Creation)
+    // Moved session ID check here, as per instruction "Perform general limit checks *before* the session ID check"
+    if (!sessionid) { // Now checking sessionid after limit checks
+        console.log("[InitReactionLog] Missing session ID after passing limit checks.");
+        res.status(400).json({ error: 'Missing session ID' });
+        return;
+    }
+    console.log("[InitReactionLog] Passed all limit checks. Proceeding with session ID check for messageId:", messageId, "sessionid:", sessionid);
+
     const { rows: existing } = await query(
       `SELECT id FROM reactions WHERE messageid = $1 AND sessionid = $2`,
       [messageId, sessionid]
     );
 
     if (existing.length > 0) {
-      res.status(200).json({ reactionId: existing[0].id });
+      console.log("[InitReactionLog] Existing reaction found for session. Reaction ID:", existing[0].id);
+      res.status(200).json({ reactionId: existing[0].id }); // Return existing reaction if found for this session
       return;
     }
 
-    // Create new reaction
-    console.log("About to insert new reaction with values:", { messageId, sessionid, name }); // Added name
+    // 7. Proceed with Reaction Creation (if all checks pass and no existing session reaction)
+    console.log("[InitReactionLog] No existing reaction for session. Creating new reaction with values:", { messageId, sessionid, name });
 
     let insertQuery = `
       INSERT INTO reactions (messageid, sessionid, createdat, updatedat${name ? ', name' : ''})
@@ -886,18 +1123,41 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
       queryParams.push(name);
     }
 
-    console.log("Insert query:", insertQuery);
+    // Declare inserted variable to ensure it's in scope
+    let inserted: any[] = [];
+    const queryResult = await query(insertQuery, queryParams);
+    if (queryResult && queryResult.rows) {
+      inserted = queryResult.rows;
+    }
 
-    const { rows: inserted } = await query(insertQuery, queryParams);
+    if (inserted && inserted.length > 0 && inserted[0].id) {
+      const newReactionId = inserted[0].id;
+      console.log("[InitReactionLog] New reaction inserted with ID:", newReactionId);
 
-    console.log("Reaction inserted with ID:", inserted[0]?.id);
+      // 8. Increment Sender's `reactions_received_this_month`
+      try {
+        const newReceivedCount = (messageSender.reactions_received_this_month ?? 0) + 1;
+        await query(
+          "UPDATE users SET reactions_received_this_month = (COALESCE(reactions_received_this_month, 0) + 1) WHERE id = $1",
+          [messageSender.id]
+        );
+        messageSender.reactions_received_this_month = newReceivedCount; // Update in-memory
+        console.log(`[InitReactionLog] Successfully incremented reactions_received_this_month for sender ${messageSender.id}. New count: ${newReceivedCount}`);
+      } catch (incrementError) {
+        console.error(`[InitReactionLog] Error incrementing sender's reactions_received_this_month for user ${messageSender.id}:`, incrementError);
+        // Log and continue; reaction is initialized, but sender's count might be off.
+      }
 
-    
-    res.status(201).json({ reactionId: inserted[0].id });
+      res.status(201).json({ reactionId: newReactionId });
+    } else {
+      // Should not happen if insert query is correct and DB is responsive
+      console.error("[InitReactionLog] Failed to insert new reaction or get its ID back for messageId:", messageId);
+      res.status(500).json({ error: 'Failed to create new reaction.' });
+    }
     return;
 
   } catch (error: any) {
-    console.error('❌ Error initializing reaction:', {
+    console.error('❌ Error initializing reaction (outer catch):', {
       message: error.message,
       stack: error.stack,
     });
