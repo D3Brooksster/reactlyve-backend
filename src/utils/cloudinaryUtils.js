@@ -18,18 +18,28 @@ cloudinary.config({
 });
 
 exports.extractPublicIdAndResourceType = (cloudinaryUrl) => {
-  if (typeof cloudinaryUrl !== 'string' || !cloudinaryUrl.includes('cloudinary.com')) {
-    if (typeof cloudinaryUrl !== 'string') {
-      console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
-    } else {
-      console.log(`Attempted to extract public ID from non-Cloudinary URL: ${cloudinaryUrl}`);
-    }
+  if (typeof cloudinaryUrl !== 'string') {
+    console.warn(`Invalid URL format for public ID extraction: Expected a string, but received ${typeof cloudinaryUrl}.`);
+    return null;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(cloudinaryUrl);
+  } catch (error) {
+    console.error('Failed to parse Cloudinary URL in extractPublicIdAndResourceType:', { cloudinaryUrl, error });
+    return null;
+  }
+
+  const hostname = parsedUrl.hostname;
+  if (hostname !== 'res.cloudinary.com' && !hostname.endsWith('.cloudinary.com')) {
+    console.log(`Attempted to extract public ID from non-Cloudinary URL: ${cloudinaryUrl}`);
     return null;
   }
 
   try {
-    const url = new URL(cloudinaryUrl);
-    const pathname = url.pathname;
+    // const url = new URL(cloudinaryUrl); // Already parsed as parsedUrl
+    const pathname = parsedUrl.pathname;
     const pathSegments = pathname.split('/').filter(segment => segment);
 
     let resourceTypeIndex = -1;
@@ -76,6 +86,10 @@ exports.extractPublicIdAndResourceType = (cloudinaryUrl) => {
 
 exports.deleteFromCloudinary = (cloudinaryUrl) => {
   return new Promise((resolve, reject) => {
+    if (typeof cloudinaryUrl !== 'string') {
+      console.warn(`Invalid URL provided to deleteFromCloudinary: Expected a string, but received ${typeof cloudinaryUrl}.`);
+      return resolve({ message: "Skipped invalid URL (not a string)" });
+    }
     try {
       const url = new URL(cloudinaryUrl);
       if (url.hostname !== 'res.cloudinary.com' && !url.hostname.endsWith('.cloudinary.com')) {
