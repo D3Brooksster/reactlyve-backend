@@ -235,7 +235,7 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
     
         // Fetch messages
         const { rows: messages } = await query(
-          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size
+          `SELECT id, content, imageurl, shareablelink, passcode, viewed, createdat, updatedat, reaction_length, media_size, max_reactions_allowed
            FROM messages 
            WHERE senderid = $1 
            ORDER BY createdat DESC 
@@ -270,13 +270,24 @@ export const getAllMessages = async (req: Request, res: Response): Promise<void>
         }
     
         // Format messages with attached reactions
-        const formattedMessages = messages.map(msg => ({
-          ...msg,
-          mediaSize: msg.media_size,
-          reactions: reactionMap[msg.id] || [],
-          createdAt: new Date(msg.createdat).toISOString(),
-          updatedAt: new Date(msg.updatedat).toISOString()
-        }));
+        const formattedMessages = messages.map(msg => {
+          const reactions_used = (reactionMap[msg.id] || []).length;
+          let reactions_remaining: number | null = null;
+
+          if (msg.max_reactions_allowed !== null && msg.max_reactions_allowed !== undefined) {
+            reactions_remaining = Math.max(0, msg.max_reactions_allowed - reactions_used);
+          }
+
+          return {
+            ...msg,
+            mediaSize: msg.media_size,
+            reactions: reactionMap[msg.id] || [],
+            reactions_used,
+            reactions_remaining,
+            createdAt: new Date(msg.createdat).toISOString(),
+            updatedAt: new Date(msg.updatedat).toISOString()
+          };
+        });
     
         // Return final response
         res.status(200).json({
@@ -332,6 +343,13 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
 
     const { rows: reactions } = await query('SELECT * FROM reactions WHERE messageid = $1 ORDER BY createdat ASC', [id]);
 
+    const reactions_used = reactions.length;
+    let reactions_remaining: number | null = null;
+
+    if (message.max_reactions_allowed !== null && message.max_reactions_allowed !== undefined) {
+      reactions_remaining = Math.max(0, message.max_reactions_allowed - reactions_used);
+    }
+
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
       return {
@@ -352,7 +370,9 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
-      reactions: reactionsWithReplies
+      reactions: reactionsWithReplies,
+      reactions_used,
+      reactions_remaining
     });
     return;
 
