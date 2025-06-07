@@ -1074,7 +1074,7 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
         maxCanReceive >= 0 &&
         currentReceived >= maxCanReceive) {
       console.log("[InitReactionLog] Sender monthly received limit reached. Blocking reaction init."); // Retained: Operational log
-      res.status(403).json({ error: 'This user can no longer receive reactions this month (limit reached).' });
+      res.status(403).json({ error: 'This user can no longer receive reaction at this time (limit reached).' });
       return;
     }
 
