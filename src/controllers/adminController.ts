@@ -202,15 +202,15 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   } = req.body;
 
   // Basic validation
-  if (max_messages_per_month !== undefined && typeof max_messages_per_month !== 'number') {
+  if (max_messages_per_month !== undefined && max_messages_per_month !== null && typeof max_messages_per_month !== 'number') {
     res.status(400).json({ error: 'Invalid max_messages_per_month, must be a number or null.' });
     return;
   }
-  if (max_reactions_per_month !== undefined && typeof max_reactions_per_month !== 'number') {
+  if (max_reactions_per_month !== undefined && max_reactions_per_month !== null && typeof max_reactions_per_month !== 'number') {
     res.status(400).json({ error: 'Invalid max_reactions_per_month, must be a number or null.' });
     return;
   }
-  if (max_reactions_per_message !== undefined && typeof max_reactions_per_message !== 'number') {
+  if (max_reactions_per_message !== undefined && max_reactions_per_message !== null && typeof max_reactions_per_message !== 'number') {
     res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
     return;
   }
