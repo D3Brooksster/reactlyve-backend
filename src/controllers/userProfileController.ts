@@ -185,3 +185,71 @@ export const deleteMyAccount = async (req: Request, res: Response): Promise<void
 //     return null;
 //   }
 // };
+
+export const updateMyProfile = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const userId = (req.user as AppUser).id;
+  const { lastUsageResetDate } = req.body;
+
+  if (!lastUsageResetDate) {
+    res.status(400).json({ error: 'lastUsageResetDate is required' });
+    return;
+  }
+
+  try {
+    // Validate lastUsageResetDate format if necessary (e.g., using a library like date-fns)
+    // For now, assuming it's a valid date string recognizable by PostgreSQL
+
+    const updateQuery = `
+      UPDATE users
+      SET last_usage_reset_date = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *;
+    `;
+    // RETURNING * might be too broad if there's sensitive data not meant for immediate return.
+    // However, for a profile update, returning the updated user object is common.
+
+    const { rows: updatedUsers } = await query(updateQuery, [lastUsageResetDate, userId]);
+
+    if (updatedUsers.length === 0) {
+      // This case should ideally not happen if req.user.id is valid and comes from an authenticated session
+      res.status(404).json({ error: 'User not found or no update was performed.' });
+      return;
+    }
+
+    const updatedUser = updatedUsers[0] as AppUser;
+
+    // Respond with the updated user profile, similar to getMyProfile
+    res.json({
+      id: updatedUser.id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      picture: updatedUser.picture,
+      googleId: updatedUser.google_id,
+      lastLogin: updatedUser.last_login ? new Date(updatedUser.last_login).toISOString() : null,
+      role: updatedUser.role,
+      createdAt: updatedUser.created_at ? new Date(updatedUser.created_at).toISOString() : null,
+      updatedAt: updatedUser.updated_at ? new Date(updatedUser.updated_at).toISOString() : null,
+      blocked: updatedUser.blocked,
+      maxMessagesPerMonth: updatedUser.max_messages_per_month ?? null,
+      currentMessagesThisMonth: updatedUser.current_messages_this_month ?? null,
+      maxReactionsPerMonth: updatedUser.max_reactions_per_month ?? null,
+      reactionsReceivedThisMonth: updatedUser.reactions_received_this_month ?? 0,
+      lastUsageResetDate: updatedUser.last_usage_reset_date ? new Date(updatedUser.last_usage_reset_date).toISOString() : null,
+      maxReactionsPerMessage: updatedUser.max_reactions_per_message ?? null
+    });
+
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    // Check for specific database errors if needed, e.g., invalid date format
+    if (error instanceof Error && error.message.includes("invalid input syntax for type timestamp")) {
+        res.status(400).json({ error: 'Invalid date format for lastUsageResetDate. Please use a valid ISO 8601 date format.' });
+    } else {
+        res.status(500).json({ error: 'Failed to update user profile' });
+    }
+  }
+};
