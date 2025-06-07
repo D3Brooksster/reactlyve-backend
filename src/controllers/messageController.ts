@@ -1086,7 +1086,7 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
 
       if (isLimitExceeded) {
         console.log("[InitReactionLog] Per-message limit reached. Blocking reaction init."); // Retained: Operational log
-        res.status(403).json({ error: 'Reaction limit reached for this message.' });
+        res.status(403).json({ error: 'This user can no longer receive reaction at this time (limit reached).' });
         return;
       }
     }
