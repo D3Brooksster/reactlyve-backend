@@ -272,6 +272,11 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     }
     // Return all fields of the updated user, as fetched by RETURNING *
     const updatedUser = rows[0] as AppUser;
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
+      await query('UPDATE messages SET max_reactions_allowed = $1 WHERE senderid = $2', [req.body.max_reactions_per_message, userId]);
+    }
+
     res.status(200).json({ message: 'User limits updated successfully.', user: updatedUser });
     // No explicit return needed here as it's the end of the try block and function.
   } catch (error) {
