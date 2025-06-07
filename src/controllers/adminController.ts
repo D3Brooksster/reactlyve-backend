@@ -131,9 +131,7 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       // 6. Cloudinary Deletion
       if (messageImageUrl) {
         try {
-          console.log(`Admin: Attempting to delete message image from Cloudinary: ${messageImageUrl}`);
           await deleteFromCloudinary(messageImageUrl);
-          console.log(`Admin: Successfully deleted message image: ${messageImageUrl}`);
         } catch (cloudinaryError) {
           console.error(`Admin: Failed to delete message image ${messageImageUrl} from Cloudinary:`, cloudinaryError);
           // Do not re-throw, allow the process to continue
@@ -143,9 +141,7 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       for (const videoUrl of reactionVideoUrls) {
         if (videoUrl) {
           try {
-            console.log(`Admin: Attempting to delete reaction video from Cloudinary: ${videoUrl}`);
             await deleteFromCloudinary(videoUrl);
-            console.log(`Admin: Successfully deleted reaction video: ${videoUrl}`);
           } catch (cloudinaryError) {
             console.error(`Admin: Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
             // Do not re-throw, allow the process to continue
