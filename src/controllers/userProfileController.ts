@@ -197,6 +197,10 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
   const userId = (req.user as AppUser).id;
   const { lastUsageResetDate, moderateImages, moderateVideos } = req.body;
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[updateMyProfile] incoming body for user %s:', userId, req.body);
+  }
+
   try {
     const fields: string[] = [];
     const params: any[] = [];
@@ -222,6 +226,10 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
 
     const updateQuery = `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *;`;
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] query:', updateQuery, 'params:', params);
+    }
+
     const { rows: updatedUsers } = await query(updateQuery, params);
 
     if (updatedUsers.length === 0) {
@@ -231,6 +239,10 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
     }
 
     const updatedUser = updatedUsers[0] as AppUser;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] updated user:', updatedUser);
+    }
 
     // Respond with the updated user profile, similar to getMyProfile
     res.json({
