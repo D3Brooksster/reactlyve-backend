@@ -111,6 +111,7 @@ CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 # Application URLs
 FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
 JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
+JWT_EXPIRES_IN=1h # Token expiry, e.g., 1h or 7d
 ```
 
 **Note:** Ensure `GOOGLE_CALLBACK_URL` matches the redirect URI configured in your Google Cloud Console for the OAuth client.

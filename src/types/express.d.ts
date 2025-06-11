@@ -1,5 +1,5 @@
 // src/types/express.d.ts
-import { AppUser } from '../../entity/User'; // Corrected: AppUser is in User.ts
+import { AppUser } from '../entity/User'; // Corrected import path
 
 declare global {
   namespace Express {
