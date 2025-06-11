@@ -21,32 +21,23 @@ const mockAppListen = jest.fn((port, callback) => {
 });
 
 jest.mock('express', () => {
-  const originalExpress = jest.requireActual('express');
-  const app = originalExpress();
-  // Mock app.listen for the default export of express (which is the app instance)
-  // This is a bit tricky because app is both a function and an object.
-  // We are essentially replacing the app instance that index.ts uses with a mocked one.
-  const mockApp = () => app; // Return the original app instance for other uses
-  mockApp.listen = mockAppListen; // Add the mock listen to our app function/object
-  
-  // Need to mock other methods used by index.ts on the app object if they are called before listen
-  // or if their absence causes errors.
-  // For this specific index.ts, express(), express.json(), express.urlencoded(), app.use, app.get are used.
-  // The actual express() will create an app that has .use, .get etc.
-  // We only need to control .listen()
+  const actual = jest.requireActual('express');
   const mockExpress = () => ({
     use: jest.fn(),
-    json: jest.fn(() => jest.fn()), // express.json() returns a middleware
-    urlencoded: jest.fn(() => jest.fn()), // express.urlencoded() returns a middleware
     get: jest.fn(),
-    listen: mockAppListen, // Key part: mock listen on the app instance
-    // Add other methods if index.ts uses them before listen and they cause issues
+    set: jest.fn(),
+    listen: mockAppListen,
   });
-  mockExpress.json = originalExpress.json;
-  mockExpress.urlencoded = originalExpress.urlencoded;
-  // ... any other static methods of express if needed
-
-  return mockExpress;
+  // Attach json and urlencoded middleware creators
+  mockExpress.json = actual.json;
+  mockExpress.urlencoded = actual.urlencoded;
+  // Expose Router for routers imported from express
+  mockExpress.Router = actual.Router;
+  return {
+    __esModule: true,
+    default: mockExpress,
+    Router: actual.Router,
+  };
 });
 
 
