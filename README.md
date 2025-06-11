@@ -189,7 +189,8 @@ A brief overview of key directories within the `src/` folder:
 
 Image and video uploads can be automatically checked for inappropriate content.
 Users may enable or disable moderation from the frontend. When enabled, uploads
-are scanned using Cloudinary's AWS Rekognition add-on and the results are stored
+are scanned using Cloudinary's AWS Rekognition add-on (`aws_rek` for images and
+`aws_rek_video` for videos) and the results are stored
 in the new `moderation_status` and `moderation_details` columns on the
 `messages` and `reactions` tables. Assets that are flagged are marked as
 `rejected` and can be submitted for manual review via the

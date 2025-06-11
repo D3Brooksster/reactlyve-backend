@@ -176,7 +176,7 @@ export const sendMessage = (req: Request, res: Response) => {
             req.file.buffer,
             req.file.size,
             'messages',
-            user.moderate_videos ? { moderation: 'aws_rek' } : {}
+            user.moderate_videos ? { moderation: 'aws_rek_video' } : {}
           );
           mediaUrl = uploadResult.secure_url;
           originalUrl = mediaUrl;
@@ -832,7 +832,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       req.file.buffer,
       req.file.size,
       'reactions',
-      moderateVideos ? { moderation: 'aws_rek' } : {}
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
     );
     const durationInSeconds = videoDuration !== null ? Math.round(videoDuration) : 0;
     console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
@@ -1305,7 +1305,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       req.file.buffer,
       req.file.size,
       'reactions',
-      moderateVideos ? { moderation: 'aws_rek' } : {}
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
     );
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
