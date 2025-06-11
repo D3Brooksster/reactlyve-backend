@@ -136,7 +136,7 @@ exports.deleteFromCloudinary = (cloudinaryUrl) => {
   });
 };
 
-exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
+exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', options = {}) => {
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -181,7 +181,8 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
         resource_type: 'video',
         folder: folder,
         eager_async: true,
-        eager: eagerTransformations
+        eager: eagerTransformations,
+        ...options
       },
       (error, result) => {
         if (error) {
@@ -217,7 +218,7 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
           console.warn('Could not construct thumbnail URL: public_id or version missing from Cloudinary result.', { result });
         }
 
-        resolve({ secure_url: videoSecureUrl, thumbnail_url: thumbnailUrl, duration });
+        resolve({ secure_url: videoSecureUrl, thumbnail_url: thumbnailUrl, duration, moderation: result.moderation });
       }
     );
 
@@ -225,15 +226,16 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions') => {
   });
 };
 
-exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
+exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => {
   try {
     const base64Data = buffer.toString('base64');
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';
     const dataUri = `${prefix}${base64Data}`;
 
-    const uploadOptions = { // Removed 'any' type
+    const uploadOptions = {
       resource_type: resourceType,
       folder: 'messages',
+      ...options,
     };
 
     // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION }; // Not used in this approach
@@ -269,7 +271,7 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType) => {
       );
     });
 
-    return result.secure_url;
+    return { secure_url: result.secure_url, moderation: result.moderation };
   } catch (error) {
     console.error('Cloudinary upload error:', error);
     throw new Error('Failed to upload file to Cloudinary');

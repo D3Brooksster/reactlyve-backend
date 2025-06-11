@@ -15,4 +15,6 @@ export interface AppUser { // Renamed from User to AppUser
   reactions_received_this_month?: number; // Added
   last_usage_reset_date?: Date;
   max_reactions_per_message?: number;
+  moderate_images?: boolean;
+  moderate_videos?: boolean;
 }

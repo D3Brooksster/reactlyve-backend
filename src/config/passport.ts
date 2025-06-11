@@ -52,10 +52,11 @@ passport.use(new GoogleStrategy(
         `INSERT INTO users (
            google_id, email, name, picture, role, last_login,
            max_messages_per_month, current_messages_this_month,
-           max_reactions_per_month, reactions_received_this_month, -- Changed column name
-           max_reactions_per_message, last_usage_reset_date
+           max_reactions_per_month, reactions_received_this_month,
+           max_reactions_per_message, last_usage_reset_date,
+           moderate_images, moderate_videos
          )
-         VALUES ($1, $2, $3, $4, 'guest', NOW(), $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, 'guest', NOW(), $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
         [
           google_id, email, name, picture,
@@ -64,7 +65,9 @@ passport.use(new GoogleStrategy(
           9,    // max_reactions_per_month
           0,    // current_reactions_this_month
           3,    // max_reactions_per_message
-          '2999-01-19T00:00:00Z' // last_usage_reset_date
+          '2999-01-19T00:00:00Z', // last_usage_reset_date
+          false, // moderate_images default
+          false  // moderate_videos default
         ]
       );
 

@@ -17,7 +17,9 @@ import {
   getReactionsByMessageId,
   getReactionById,
   deleteReactionById,
-  deleteAllReactionsForMessage
+  deleteAllReactionsForMessage,
+  submitMessageForManualReview,
+  submitReactionForManualReview
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
@@ -66,5 +68,7 @@ router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
 router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteAllReactionsForMessage);
+router.post('/messages/:id/manual-review', submitMessageForManualReview);
+router.post('/reactions/:id/manual-review', submitReactionForManualReview);
 
 export default router;

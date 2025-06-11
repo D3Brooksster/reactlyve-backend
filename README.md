@@ -112,10 +112,7 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-# AWS Credentials (for future file storage features)
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
+# Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 
 # File Uploads
 UPLOAD_DIR=uploads
@@ -182,6 +179,19 @@ A brief overview of key directories within the `src/` folder:
 *   `src/routes`: Defines the API routes and maps them to controller functions.
 *   `src/utils`: Utility functions and helper modules (e.g., `cloudinaryUtils.ts` for Cloudinary interactions).
 *   `migrations/`: Contains SQL migration files for evolving the database schema over time.
+
+## Moderation Workflow
+
+Image and video uploads can be automatically checked for inappropriate content.
+Users may enable or disable moderation from the frontend. When enabled, uploads
+are scanned using Cloudinary's AWS Rekognition add-on and the results are stored
+in the new `moderation_status` and `moderation_details` columns on the
+`messages` and `reactions` tables. Assets that are flagged are marked as
+`rejected` and can be submitted for manual review via the
+`/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
+
+Database changes required for these features are located in the
+`migrations` folder and include additional moderation columns and indexes.
 
 ## Running Tests
 
