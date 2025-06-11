@@ -66,6 +66,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
 
 *   **Development Mode:**
     The application uses `ts-node-dev` for live reloading during development.
+    The `npm run dev` script sets `NODE_ENV=development` so debug logs (such as profile update logging) are printed.
     ```bash
     npm run dev
     ```
