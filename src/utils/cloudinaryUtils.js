@@ -187,14 +187,20 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
     //   eagerTransformations = [videoTransformationOptions, overlayStep, thumbnailTransformation];
     // }
 
+    const postBody = {
+      resource_type: 'video',
+      folder: folder,
+      eager_async: true,
+      eager: eagerTransformations,
+      ...options
+    };
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[CloudinaryRequest] POST /upload', JSON.stringify(postBody));
+    }
+
     const stream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: 'video',
-        folder: folder,
-        eager_async: true,
-        eager: eagerTransformations,
-        ...options
-      },
+      postBody,
       (error, result) => {
         if (error) {
           console.error('Cloudinary error:', error);
@@ -270,6 +276,15 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => 
       // let videoEagerOptions = [{ fetch_format: 'auto' }, { quality: 'auto' }]; // Logic removed
       // videoEagerOptions.push(overlayStep); // Logic removed
       uploadOptions.eager = [{ raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }];
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[CloudinaryRequest] POST /upload', JSON.stringify({
+        resource_type: resourceType,
+        folder: 'messages',
+        ...options,
+        eager: uploadOptions.eager,
+      }));
     }
 
     const result = await new Promise((resolve, reject) => { // Removed 'any' type

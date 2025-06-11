@@ -1431,6 +1431,10 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
     };
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] explicit options:', explicitOptions);
+      console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
+        public_id: extracted.public_id,
+        ...explicitOptions
+      }));
     }
     await cloudinary.uploader.explicit(extracted.public_id, explicitOptions);
 
@@ -1478,6 +1482,10 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
     };
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] explicit video options:', explicitVideoOptions);
+      console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
+        public_id: extracted.public_id,
+        ...explicitVideoOptions
+      }));
     }
     await cloudinary.uploader.explicit(extracted.public_id, explicitVideoOptions);
 
