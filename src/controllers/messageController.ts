@@ -1272,7 +1272,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinaryWithRetry(
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
       req.file.buffer,
       req.file.size,
       'reactions',
@@ -1280,12 +1280,37 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     );
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
-    await query(
-      `UPDATE reactions
-       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW()
-       WHERE id = $4`,
-      [actualVideoUrl, actualThumbnailUrl, duration, reactionId]
-    );
+    let moderationStatus = 'approved';
+    let moderationDetails: string | null = null;
+    let originalVideoUrl = actualVideoUrl;
+
+    if (req.user && (req.user as AppUser).moderate_videos) {
+      if (vidModeration && Array.isArray(vidModeration)) {
+        const mod = vidModeration[0];
+        moderationStatus = mod.status || 'pending';
+        moderationDetails = JSON.stringify(mod);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation result:', mod);
+        }
+      } else {
+        moderationStatus = 'pending';
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation pending');
+        }
+      }
+    }
+
+    const updateQuery = `UPDATE reactions
+       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW(),
+           moderation_status = $4, moderation_details = $5, original_videourl = $6
+       WHERE id = $7`;
+    const updateParams = [actualVideoUrl, actualThumbnailUrl, duration, moderationStatus, moderationDetails, originalVideoUrl, reactionId];
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] query:', updateQuery, 'params:', updateParams);
+    }
+
+    await query(updateQuery, updateParams);
 
     // Update isreply status of the parent message
     const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
