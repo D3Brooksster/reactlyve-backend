@@ -1414,7 +1414,23 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       res.status(400).json({ error: 'Invalid Cloudinary URL' });
       return;
     }
-    await cloudinary.uploader.explicit(extracted.public_id, { type: 'upload', moderation: 'manual' });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Message manual review request:', {
+        id,
+        public_id: extracted.public_id,
+        resource_type: extracted.resource_type
+      });
+    }
+
+    await cloudinary.uploader.explicit(extracted.public_id, {
+      type: 'upload',
+      resource_type: extracted.resource_type || 'image',
+      moderation: 'manual'
+    });
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Message manual review submitted.');
+    }
     await query('UPDATE messages SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
     res.status(200).json({ success: true });
     return;
@@ -1439,7 +1455,23 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       res.status(400).json({ error: 'Invalid Cloudinary URL' });
       return;
     }
-    await cloudinary.uploader.explicit(extracted.public_id, { type: 'upload', moderation: 'manual' });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Reaction manual review request:', {
+        id,
+        public_id: extracted.public_id,
+        resource_type: extracted.resource_type
+      });
+    }
+
+    await cloudinary.uploader.explicit(extracted.public_id, {
+      type: 'upload',
+      resource_type: extracted.resource_type || 'video',
+      moderation: 'manual'
+    });
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Reaction manual review submitted.');
+    }
     await query('UPDATE reactions SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
     res.status(200).json({ success: true });
     return;

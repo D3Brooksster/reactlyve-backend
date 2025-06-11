@@ -195,6 +195,9 @@ in the new `moderation_status` and `moderation_details` columns on the
 `messages` and `reactions` tables. Assets that are flagged are marked as
 `rejected` and can be submitted for manual review via the
 `/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
+These endpoints re-submit the asset to Cloudinary with `moderation: manual`,
+allowing an administrator to override the decision in Cloudinary's moderation
+portal.
 
 Video moderation results may arrive asynchronously via Cloudinary. The
 `/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
