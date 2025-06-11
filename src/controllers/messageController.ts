@@ -784,7 +784,9 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 };
 
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
-  console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
+  if (process.env.NODE_ENV === 'development') {
+    console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
+  }
   try {
 
     const { id: messageId_param } = req.params; // Message ID or shareable link part
@@ -802,21 +804,27 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const messageResult = await query(messageQueryText, [messageId_param, `%${messageId_param}%`]);
 
     if (messageResult.rows.length === 0) {
-      console.log(`[RecordReactionLog] Message not found for param: ${messageId_param}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[RecordReactionLog] Message not found for param: ${messageId_param}`);
+      }
       res.status(404).json({ error: 'Message not found.' });
       return;
     }
     const messageDetails = messageResult.rows[0];
     const actualMessageId = messageDetails.actual_message_id; // This is the true UUID of the message
     // messageSenderId is available from messageDetails.senderid for updating 'isreply' via actualMessageId.
-    console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
+    }
 
     // Limit checks (sender and per-message) are now handled by initReaction.
     // Reactor authentication is handled by middleware.
     // This function now directly proceeds to file upload and reaction recording.
 
     if (!req.file) {
-      console.log("[RecordReactionLog] No reaction video provided.");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("[RecordReactionLog] No reaction video provided.");
+      }
       res.status(400).json({ error: 'No reaction video provided' });
       return;
     }
@@ -835,7 +843,9 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       moderateVideos ? { moderation: 'aws_rek_video' } : {}
     );
     const durationInSeconds = videoDuration !== null ? Math.round(videoDuration) : 0;
-    console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
+    }
 
     let moderationStatus = 'approved';
     let moderationDetails: string | null = null;
@@ -875,14 +885,18 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
 
     if (insertedReaction.length > 0 && insertedReaction[0].id) {
       const newReactionId = insertedReaction[0].id;
-      console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
       if (process.env.NODE_ENV === 'development') {
+        console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
         console.log(`[Moderation] Reaction ${newReactionId} stored with status ${moderationStatus}`);
       }
 
       // Update isreply status of the parent message (existing logic)
       query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId])
-        .then(() => console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`))
+        .then(() => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`);
+          }
+        })
         .catch(err => console.error(`[RecordReactionLog] Failed to update isreply for message ${actualMessageId}:`, err));
 
       res.status(201).json({

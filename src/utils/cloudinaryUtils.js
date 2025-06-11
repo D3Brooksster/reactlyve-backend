@@ -144,7 +144,9 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
     console.log('[CloudinaryUpload] video options:', options);
   }
   return new Promise((resolve, reject) => {
-    console.log('Buffer size:', buffer.length, 'File size:', fileSize);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Buffer size:', buffer.length, 'File size:', fileSize);
+    }
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
 
     // let videoTransformationOptions; // No longer using separate base options here
@@ -205,13 +207,15 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
           return reject(error);
         }
 
-        if (result && result.eager && Array.isArray(result.eager)) {
-          console.log('[uploadVideoToCloudinary] Eager transformation results:');
-          result.eager.forEach((eager_result, index) => {
-            console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
-          });
-        } else if (result) {
-          console.log('[uploadVideoToCloudinary] No eager transformations found in result or result.eager is not an array. Result:', result);
+        if (process.env.NODE_ENV === 'development') {
+          if (result && result.eager && Array.isArray(result.eager)) {
+            console.log('[uploadVideoToCloudinary] Eager transformation results:');
+            result.eager.forEach((eager_result, index) => {
+              console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
+            });
+          } else if (result) {
+            console.log('[uploadVideoToCloudinary] No eager transformations found in result or result.eager is not an array. Result:', result);
+          }
         }
 
         const videoSecureUrl = result?.secure_url || '';
@@ -290,13 +294,15 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => 
         (error, result) => {
           if (error) reject(error);
           else {
-            if (result && result.eager && Array.isArray(result.eager)) {
-              console.log('[uploadToCloudinarymedia] Eager transformation results:');
-              result.eager.forEach((eager_result, index) => {
-                console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
-              });
-            } else if (result) {
-              console.log('[uploadToCloudinarymedia] No eager transformations found in result or result.eager is not an array. Result:', result);
+            if (process.env.NODE_ENV === 'development') {
+              if (result && result.eager && Array.isArray(result.eager)) {
+                console.log('[uploadToCloudinarymedia] Eager transformation results:');
+                result.eager.forEach((eager_result, index) => {
+                  console.log(`  Eager[${index}]: Processed. URL: ${eager_result.secure_url}, Bytes: ${eager_result.bytes}, Format: ${eager_result.format}`);
+                });
+              } else if (result) {
+                console.log('[uploadToCloudinarymedia] No eager transformations found in result or result.eager is not an array. Result:', result);
+              }
             }
             resolve(result);
           }
