@@ -47,6 +47,28 @@ const generateShareableLink = (): string => {
   return `${baseUrl}/m/${uniqueId}`;
 };
 
+const uploadVideoToCloudinaryWithRetry = async (
+  buffer: Buffer,
+  size: number,
+  folder: string,
+  options: Record<string, any>,
+  retries = 1
+) => {
+  try {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadVideoToCloudinaryWithRetry] Attempting upload');
+    }
+    return await uploadVideoToCloudinary(buffer, size, folder, options);
+  } catch (err: any) {
+    if (retries > 0 && err && err.http_code === 499) {
+      console.warn('[uploadVideoToCloudinaryWithRetry] Timeout, retrying upload');
+      return await uploadVideoToCloudinary(buffer, size, folder, options);
+    }
+    console.error('[uploadVideoToCloudinaryWithRetry] Upload failed:', err);
+    throw err;
+  }
+};
+
 // === Controllers ===
 export const sendMessage = (req: Request, res: Response) => {
   upload(req, res, async (err) => {
@@ -146,7 +168,7 @@ export const sendMessage = (req: Request, res: Response) => {
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
         if (mediaType === 'video') {
-          const uploadResult = await uploadVideoToCloudinary(
+          const uploadResult = await uploadVideoToCloudinaryWithRetry(
             req.file.buffer,
             req.file.size,
             'messages',
@@ -771,7 +793,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinary(
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
       req.file.buffer,
       req.file.size,
       'reactions',
@@ -1217,7 +1239,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinaryWithRetry(
       req.file.buffer,
       req.file.size,
       'reactions',
