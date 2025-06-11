@@ -137,6 +137,13 @@ exports.deleteFromCloudinary = (cloudinaryUrl) => {
 };
 
 exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', options = {}) => {
+  const notifyUrl = process.env.CLOUDINARY_NOTIFICATION_URL;
+  if (notifyUrl && !options.notification_url) {
+    options.notification_url = notifyUrl;
+  }
+  if (options.moderation && options.moderation !== 'manual') {
+    options.moderation_async = true;
+  }
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -227,6 +234,13 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
 };
 
 exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => {
+  const notifyUrl = process.env.CLOUDINARY_NOTIFICATION_URL;
+  if (notifyUrl && !options.notification_url) {
+    options.notification_url = notifyUrl;
+  }
+  if (options.moderation && options.moderation !== 'manual') {
+    options.moderation_async = true;
+  }
   try {
     const base64Data = buffer.toString('base64');
     const prefix = resourceType === 'image' ? 'data:image/jpeg;base64,' : 'data:video/mp4;base64,';

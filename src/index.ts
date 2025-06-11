@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
 import userProfileRoutes from './routes/userProfileRoutes';
 import adminRoutes from './routes/adminRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 
 // Import for cron job
 import cron from 'node-cron';
@@ -51,6 +52,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', messageRoutes); // Assuming this is for general messages, e.g. /api/messages
 app.use('/api/profile', userProfileRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 app.get(
   "/",

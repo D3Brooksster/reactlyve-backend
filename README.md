@@ -113,6 +113,9 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
+# URL for Cloudinary to POST moderation results
+CLOUDINARY_NOTIFICATION_URL=http://localhost:3000/api/webhooks/cloudinary
+
 # Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 
 # File Uploads
@@ -145,6 +148,7 @@ The API provides several route groups for different functionalities:
     *   Removing users.
 *   Setting user message/reaction limits and moderation preferences.
 *   Retrieving detailed user information, including moderation settings.
+*   **`/api/webhooks`**: Endpoints for third-party callbacks, currently handling Cloudinary moderation results.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
 
@@ -190,6 +194,10 @@ in the new `moderation_status` and `moderation_details` columns on the
 `messages` and `reactions` tables. Assets that are flagged are marked as
 `rejected` and can be submitted for manual review via the
 `/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
+
+Video moderation results may arrive asynchronously via Cloudinary. The
+`/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
+database once moderation is complete.
 
 Database changes required for these features are located in the
 `migrations` folder and include additional moderation columns and indexes.
