@@ -90,6 +90,10 @@ Create a `.env` file in the root directory of the project and populate it with t
 # Server Configuration
 PORT=3000
 NODE_ENV=development # or 'production'
+FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
+
+# Administrative Accounts
+ADMIN_EMAILS=admin1@example.com,admin2@example.com # Comma-separated list
 
 # Database Configuration
 DATABASE_HOST=localhost
@@ -108,8 +112,15 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-# Application URLs
-FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
+# AWS Credentials (for future file storage features)
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION=us-east-1
+
+# File Uploads
+UPLOAD_DIR=uploads
+
+# JWT Configuration
 JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
 JWT_EXPIRES_IN=1h # Token expiry, e.g., 1h or 7d
 ```
