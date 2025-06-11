@@ -113,13 +113,12 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-# URL for Cloudinary to POST moderation results
+# Optional URL for Cloudinary to POST moderation results
+# (leave unset if you rely on a global webhook in your Cloudinary account)
 CLOUDINARY_NOTIFICATION_URL=http://localhost:3000/api/webhooks/cloudinary
 
-# This must be a publicly accessible URL. If Cloudinary can't reach it, no
-# moderation callbacks will be delivered. When debugging, check your Cloudinary
-# console for failed webhook attempts and ensure the value printed at startup
-# matches the URL you expect.
+# If you provide this, it must be publicly accessible. Check the Cloudinary
+# dashboard for failed webhook attempts when debugging callbacks.
 
 # Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 
@@ -200,11 +199,9 @@ in the new `moderation_status` and `moderation_details` columns on the
 `messages` and `reactions` tables. Assets that are flagged are marked as
 `rejected` and can be submitted for manual review via the
 `/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
-These endpoints re-submit the asset to Cloudinary with `moderation: manual` and
-include the `CLOUDINARY_NOTIFICATION_URL` so the final decision is posted back to
-the backend. This allows an administrator to override the decision in
-Cloudinary's moderation portal and have the new status reflected in the
-database.
+These endpoints re-submit the asset to Cloudinary with `moderation: manual`.
+If a webhook is configured in Cloudinary, the final decision will be posted back
+to the backend so the status updates automatically.
 
 Video moderation results may arrive asynchronously via Cloudinary. The
 `/api/webhooks/cloudinary` endpoint receives these callbacks and updates the

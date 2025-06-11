@@ -66,7 +66,7 @@ const server = app.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT} in ${process.env.NODE_ENV}`);
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('Using Cloudinary notification URL:', process.env.CLOUDINARY_NOTIFICATION_URL);
+    console.log('Cloudinary notification URL (if any):', process.env.CLOUDINARY_NOTIFICATION_URL || 'using account webhook');
   }
 
   // Schedule the inactive account cleanup job

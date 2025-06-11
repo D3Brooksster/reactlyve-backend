@@ -1426,7 +1426,6 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       type: 'upload',
       resource_type: extracted.resource_type || 'image',
       moderation: 'manual',
-      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL,
       moderation_async: true
     };
     if (process.env.NODE_ENV === 'development') {
@@ -1477,7 +1476,6 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       type: 'upload',
       resource_type: extracted.resource_type || 'video',
       moderation: 'manual',
-      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL,
       moderation_async: true
     };
     if (process.env.NODE_ENV === 'development') {
