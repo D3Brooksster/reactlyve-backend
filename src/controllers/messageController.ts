@@ -180,9 +180,15 @@ export const sendMessage = (req: Request, res: Response) => {
           );
           mediaUrl = uploadResult.secure_url;
           originalUrl = mediaUrl;
-          if (user.moderate_videos && uploadResult.moderation && Array.isArray(uploadResult.moderation)) {
-            const mod = uploadResult.moderation[0];
-            moderationStatus = mod.status || 'pending';
+          if (user.moderate_videos && uploadResult.moderation) {
+            const mod = Array.isArray(uploadResult.moderation)
+              ? uploadResult.moderation[0]
+              : uploadResult.moderation;
+            if (typeof mod === 'object') {
+              moderationStatus = mod.status || 'pending';
+            } else if (typeof mod === 'string') {
+              moderationStatus = mod;
+            }
             moderationDetails = JSON.stringify(mod);
             if (process.env.NODE_ENV === 'development') {
               console.log(`[Moderation] Video moderation result:`, mod);
@@ -201,9 +207,15 @@ export const sendMessage = (req: Request, res: Response) => {
           );
           mediaUrl = imgResult.secure_url;
           originalUrl = mediaUrl;
-          if (user.moderate_images && imgResult.moderation && Array.isArray(imgResult.moderation)) {
-            const mod = imgResult.moderation[0];
-            moderationStatus = mod.status || 'pending';
+          if (user.moderate_images && imgResult.moderation) {
+            const mod = Array.isArray(imgResult.moderation)
+              ? imgResult.moderation[0]
+              : imgResult.moderation;
+            if (typeof mod === 'object') {
+              moderationStatus = mod.status || 'pending';
+            } else if (typeof mod === 'string') {
+              moderationStatus = mod;
+            }
             moderationDetails = JSON.stringify(mod);
             if (process.env.NODE_ENV === 'development') {
               console.log(`[Moderation] Image moderation result:`, mod);
@@ -830,9 +842,13 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     let moderationDetails: string | null = null;
     let originalVideoUrl = actualVideoUrl;
     if (req.user && (req.user as AppUser).moderate_videos) {
-      if (vidModeration && Array.isArray(vidModeration)) {
-        const mod = vidModeration[0];
-        moderationStatus = mod.status || 'pending';
+      if (vidModeration) {
+        const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
+        if (typeof mod === 'object') {
+          moderationStatus = mod.status || 'pending';
+        } else if (typeof mod === 'string') {
+          moderationStatus = mod;
+        }
         moderationDetails = JSON.stringify(mod);
         if (process.env.NODE_ENV === 'development') {
           console.log('[Moderation] Reaction video moderation result:', mod);
@@ -1285,9 +1301,13 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     let originalVideoUrl = actualVideoUrl;
 
     if (req.user && (req.user as AppUser).moderate_videos) {
-      if (vidModeration && Array.isArray(vidModeration)) {
-        const mod = vidModeration[0];
-        moderationStatus = mod.status || 'pending';
+      if (vidModeration) {
+        const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
+        if (typeof mod === 'object') {
+          moderationStatus = mod.status || 'pending';
+        } else if (typeof mod === 'string') {
+          moderationStatus = mod;
+        }
         moderationDetails = JSON.stringify(mod);
         if (process.env.NODE_ENV === 'development') {
           console.log('[Moderation] Reaction video moderation result:', mod);
