@@ -144,6 +144,9 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
   if (options.moderation && options.moderation !== 'manual') {
     options.moderation_async = true;
   }
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[CloudinaryUpload] video options:', options);
+  }
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
     if (buffer.length === 0) return reject(new Error('Empty buffer received'));
@@ -240,6 +243,9 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => 
   }
   if (options.moderation && options.moderation !== 'manual') {
     options.moderation_async = true;
+  }
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[CloudinaryUpload] media options:', { resourceType, options });
   }
   try {
     const base64Data = buffer.toString('base64');

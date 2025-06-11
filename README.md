@@ -203,6 +203,10 @@ Video moderation results may arrive asynchronously via Cloudinary. The
 `/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
 database once moderation is complete.
 
+When running in development mode, both upload requests and incoming webhook
+payloads are printed to the console so you can verify Cloudinary is attempting
+to reach the backend.
+
 Database changes required for these features are located in the
 `migrations` folder and include additional moderation columns and indexes.
 

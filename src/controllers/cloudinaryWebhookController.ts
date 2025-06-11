@@ -3,8 +3,9 @@ import { query } from '../config/database.config';
 
 export const handleCloudinaryModeration = async (req: Request, res: Response): Promise<void> => {
   try {
+    console.log('[CloudinaryWebhook] incoming payload:', JSON.stringify(req.body));
     if (process.env.NODE_ENV === 'development') {
-      console.log('[CloudinaryWebhook] payload:', JSON.stringify(req.body));
+      console.log('[CloudinaryWebhook] headers:', JSON.stringify(req.headers));
     }
     const { public_id, moderation_status, moderation_response } = req.body;
     if (!public_id || !moderation_status) {
