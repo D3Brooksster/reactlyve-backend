@@ -59,8 +59,8 @@ router.put('/messages/:id', requireAuth, updateMessage); // Added PUT route for 
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
 router.post('/reactions/init/:messageId', initReaction);
-router.put('/reactions/:reactionId/video', requireAuth, upload.single('video'), uploadReactionVideo);
-router.post('/reactions/:id', requireAuth, upload.single('video'), recordReaction);
+router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
+router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
 router.post('/reactions/:id/skip', skipReaction);

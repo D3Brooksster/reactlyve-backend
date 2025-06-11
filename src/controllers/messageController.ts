@@ -786,14 +786,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
   console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
   try {
-    // === REACTION AUTHOR (REACTOR) CHECK ===
-    if (!req.user) {
-      console.warn("[RecordReactionLog] Attempt to record reaction without authentication.");
-      res.status(401).json({ error: 'Authentication required to record reactions.' });
-      return;
-    }
-    const reactor = req.user as AppUser; // Authenticated user recording the reaction
-    console.log("[RecordReactionLog] Reaction author (reactor) ID:", reactor.id);
 
     const { id: messageId_param } = req.params; // Message ID or shareable link part
     const { name } = req.body; // Name for the reaction (optional)
@@ -829,11 +821,18 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    const senderPrefRes = await query('SELECT moderate_videos FROM users WHERE id = $1', [messageDetails.senderid]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[recordReaction] sender moderate_videos:', moderateVideos);
+    }
+
     const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
       req.file.buffer,
       req.file.size,
       'reactions',
-      (req.user && (req.user as AppUser).moderate_videos) ? { moderation: 'aws_rek' } : {}
+      moderateVideos ? { moderation: 'aws_rek' } : {}
     );
     const durationInSeconds = videoDuration !== null ? Math.round(videoDuration) : 0;
     console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
@@ -841,7 +840,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     let moderationStatus = 'approved';
     let moderationDetails: string | null = null;
     let originalVideoUrl = actualVideoUrl;
-    if (req.user && (req.user as AppUser).moderate_videos) {
+    if (moderateVideos) {
       if (vidModeration) {
         const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
         if (typeof mod === 'object') {
@@ -1288,11 +1287,25 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
+    // Determine moderation preference based on the owner of the parent message
+    const reactionRes = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
+    if (!reactionRes.rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
+    const messageId = reactionRes.rows[0].messageid;
+    const senderPrefRes = await query('SELECT senderid, moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] message owner moderate_videos:', moderateVideos);
+    }
+
     const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
       req.file.buffer,
       req.file.size,
       'reactions',
-      req.user && (req.user as AppUser).moderate_videos ? { moderation: 'aws_rek' } : {}
+      moderateVideos ? { moderation: 'aws_rek' } : {}
     );
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
@@ -1300,7 +1313,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     let moderationDetails: string | null = null;
     let originalVideoUrl = actualVideoUrl;
 
-    if (req.user && (req.user as AppUser).moderate_videos) {
+    if (moderateVideos) {
       if (vidModeration) {
         const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
         if (typeof mod === 'object') {
