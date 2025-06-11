@@ -138,12 +138,12 @@ The API provides several route groups for different functionalities:
 *   **`/api/profile`**: User profile operations.
     *   Viewing user's own profile.
     *   Deleting user's own account.
-    *   Updating profile settings.
+    *   Updating profile settings, including moderation preferences.
 *   **`/api/admin`**: Admin-specific operations.
     *   Listing users.
     *   Modifying user roles.
     *   Removing users.
-    *   Setting user message/reaction limits.
+    *   Setting user message/reaction limits and moderation preferences.
     *   Retrieving detailed user information.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.

@@ -194,8 +194,14 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     max_messages_per_month,
     max_reactions_per_month,
     max_reactions_per_message,
-    last_usage_reset_date // Added
+    last_usage_reset_date,
+    moderate_images,
+    moderate_videos
   } = req.body;
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[setUserLimits] incoming body for user %s:', userId, req.body);
+  }
 
   // Basic validation
   if (max_messages_per_month !== undefined && max_messages_per_month !== null && typeof max_messages_per_month !== 'number') {
@@ -208,6 +214,14 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   }
   if (max_reactions_per_message !== undefined && max_reactions_per_message !== null && typeof max_reactions_per_message !== 'number') {
     res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
+    return;
+  }
+  if (moderate_images !== undefined && typeof moderate_images !== 'boolean') {
+    res.status(400).json({ error: 'Invalid moderate_images value, must be boolean.' });
+    return;
+  }
+  if (moderate_videos !== undefined && typeof moderate_videos !== 'boolean') {
+    res.status(400).json({ error: 'Invalid moderate_videos value, must be boolean.' });
     return;
   }
 
@@ -238,6 +252,15 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
       values.push(max_reactions_per_message);
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'moderate_images')) {
+      fieldsToUpdate.push(`moderate_images = $${queryParamIndex++}`);
+      values.push(moderate_images);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'moderate_videos')) {
+      fieldsToUpdate.push(`moderate_videos = $${queryParamIndex++}`);
+      values.push(moderate_videos);
+    }
+
     // Add last_usage_reset_date to update if provided
     if (Object.prototype.hasOwnProperty.call(req.body, 'last_usage_reset_date')) {
       if (last_usage_reset_date === null) {
@@ -260,6 +283,10 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
 
     values.push(userId);
     const updateUserQuery = `UPDATE users SET ${fieldsToUpdate.join(', ')} WHERE id = $${queryParamIndex} RETURNING *;`;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[setUserLimits] query:', updateUserQuery, 'params:', values);
+    }
 
     const { rows } = await query(updateUserQuery, values);
     if (rows.length === 0) {
