@@ -1,6 +1,6 @@
-# Reactlye Backend
+# Reactlyve Backend
 
-This is the backend service for the Reactlye application, providing API endpoints for user authentication, messaging, profile management, and administrative tasks. It features Google OAuth 2.0 integration, a robust messaging system with media support via Cloudinary, and user role management.
+This is the backend service for the Reactlyve application, providing API endpoints for user authentication, messaging, profile management, and administrative tasks. It features Google OAuth 2.0 integration, a robust messaging system with media support via Cloudinary, and user role management.
 
 ## Features
 
@@ -10,6 +10,7 @@ This is the backend service for the Reactlye application, providing API endpoint
 *   **User Management:**
     *   User roles: `user`, `admin`, `guest`.
     *   Users can view their profile and delete their own account.
+    *   Users can update profile settings such as `lastUsageResetDate`.
 *   **Messaging System:**
     *   Send text messages.
     *   Upload and send image and video messages (stored on Cloudinary).
@@ -20,6 +21,8 @@ This is the backend service for the Reactlye application, providing API endpoint
     *   View all registered users.
     *   Update user roles.
     *   Remove users from the system.
+    *   Set user message and reaction limits.
+    *   View detailed user information.
 *   **Automated Jobs:**
     *   Daily cleanup of inactive user accounts (and their associated data, including Cloudinary assets) after 12 months of inactivity.
 
@@ -39,7 +42,7 @@ This is the backend service for the Reactlye application, providing API endpoint
     ```
 2.  **Navigate to the project directory:**
     ```bash
-    cd reactlye-backend 
+    cd reactlyve-backend
     ```
     (Or the actual name of the directory if different)
 3.  **Install dependencies:**
@@ -50,7 +53,7 @@ This is the backend service for the Reactlye application, providing API endpoint
 ### Database Setup
 
 1.  **Ensure PostgreSQL is running** and you have access to create a database and user.
-2.  **Create a database** for the application (e.g., `reactlye_db`).
+2.  **Create a database** for the application (e.g., `reactlyve_db`).
 3.  **Set up the database schema:**
     *   The initial database schema (tables like users, messages, etc.) can be set up using the `migration.sql` file located in the project root. This file should be executed against your newly created database.
         ```bash
@@ -91,7 +94,7 @@ NODE_ENV=development # or 'production'
 # Database Configuration
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
-DATABASE_NAME=your_database_name # e.g., reactlye_db
+DATABASE_NAME=your_database_name # e.g., reactlyve_db
 DATABASE_USER=your_postgres_user
 DATABASE_PASSWORD=your_postgres_password
 
@@ -125,10 +128,13 @@ The API provides several route groups for different functionalities:
 *   **`/api/profile`**: User profile operations.
     *   Viewing user's own profile.
     *   Deleting user's own account.
+    *   Updating profile settings.
 *   **`/api/admin`**: Admin-specific operations.
     *   Listing users.
     *   Modifying user roles.
     *   Removing users.
+    *   Setting user message/reaction limits.
+    *   Retrieving detailed user information.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
 
@@ -184,4 +190,3 @@ This command will execute all test files (typically `*.test.ts` or `*.spec.ts`) 
 ## License
 
 This project is licensed under the ISC License (as per `package.json`).
-```

@@ -1,12 +1,13 @@
 {
-  "name": "reactlye-backend",
+  "name": "reactlyve-backend",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --files src/index.ts",
     "build": "tsc && mkdir -p ./dist/utils && cp ./src/utils/cloudinaryUtils.js ./dist/utils/ && cp ./src/utils/cloudinaryUtils.d.ts ./dist/utils/ && cp ./package.json ./dist",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
