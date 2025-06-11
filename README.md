@@ -116,6 +116,11 @@ CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 # URL for Cloudinary to POST moderation results
 CLOUDINARY_NOTIFICATION_URL=http://localhost:3000/api/webhooks/cloudinary
 
+# This must be a publicly accessible URL. If Cloudinary can't reach it, no
+# moderation callbacks will be delivered. When debugging, check your Cloudinary
+# console for failed webhook attempts and ensure the value printed at startup
+# matches the URL you expect.
+
 # Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 
 # File Uploads
@@ -204,6 +209,9 @@ database.
 Video moderation results may arrive asynchronously via Cloudinary. The
 `/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
 database once moderation is complete.
+
+If callbacks do not appear, confirm the endpoint is publicly reachable and check
+the "Webhooks" log in your Cloudinary dashboard for delivery attempts.
 
 When running in development mode, both upload requests and incoming webhook
 payloads are printed to the console so you can verify Cloudinary is attempting

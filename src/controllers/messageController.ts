@@ -1422,12 +1422,17 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       });
     }
 
-    await cloudinary.uploader.explicit(extracted.public_id, {
+    const explicitOptions = {
       type: 'upload',
       resource_type: extracted.resource_type || 'image',
       moderation: 'manual',
-      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL
-    });
+      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL,
+      moderation_async: true
+    };
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] explicit options:', explicitOptions);
+    }
+    await cloudinary.uploader.explicit(extracted.public_id, explicitOptions);
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Message manual review submitted.');
@@ -1464,12 +1469,17 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       });
     }
 
-    await cloudinary.uploader.explicit(extracted.public_id, {
+    const explicitVideoOptions = {
       type: 'upload',
       resource_type: extracted.resource_type || 'video',
       moderation: 'manual',
-      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL
-    });
+      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL,
+      moderation_async: true
+    };
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] explicit video options:', explicitVideoOptions);
+    }
+    await cloudinary.uploader.explicit(extracted.public_id, explicitVideoOptions);
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Reaction manual review submitted.');

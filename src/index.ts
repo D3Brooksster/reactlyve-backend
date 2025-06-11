@@ -65,6 +65,10 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const server = app.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT} in ${process.env.NODE_ENV}`);
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Using Cloudinary notification URL:', process.env.CLOUDINARY_NOTIFICATION_URL);
+  }
+
   // Schedule the inactive account cleanup job
   cron.schedule('0 0 * * *', async () => {
     console.log('Running scheduled job: deleteInactiveAccounts at midnight');

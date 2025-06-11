@@ -146,6 +146,7 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
   }
   if (process.env.NODE_ENV === 'development') {
     console.log('[CloudinaryUpload] video options:', options);
+    console.log('[CloudinaryUpload] using callback URL:', options.notification_url);
   }
   return new Promise((resolve, reject) => {
     console.log('Buffer size:', buffer.length, 'File size:', fileSize);
@@ -246,6 +247,7 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => 
   }
   if (process.env.NODE_ENV === 'development') {
     console.log('[CloudinaryUpload] media options:', { resourceType, options });
+    console.log('[CloudinaryUpload] using callback URL:', options.notification_url);
   }
   try {
     const base64Data = buffer.toString('base64');
