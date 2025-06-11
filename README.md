@@ -113,12 +113,14 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-# Optional URL for Cloudinary to POST moderation results
-# (leave unset if you rely on a global webhook in your Cloudinary account)
+# Notification URL for Cloudinary to POST moderation results
+# This value is included with each upload and manual review request so
+# callbacks are sent directly to your server. If unset, Cloudinary will
+# use any account-level webhook you have configured.
 CLOUDINARY_NOTIFICATION_URL=http://localhost:3000/api/webhooks/cloudinary
 
-# If you provide this, it must be publicly accessible. Check the Cloudinary
-# dashboard for failed webhook attempts when debugging callbacks.
+# The URL must be publicly accessible. Check the Cloudinary dashboard for
+# failed webhook attempts when debugging callbacks.
 
 # Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 

@@ -189,6 +189,9 @@ exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', optio
       eager: eagerTransformations,
       ...options
     };
+    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
+      postBody.notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[CloudinaryRequest] POST /upload', JSON.stringify(postBody));
@@ -255,6 +258,9 @@ exports.uploadToCloudinarymedia = async (buffer, resourceType, options = {}) => 
       folder: 'messages',
       ...options,
     };
+    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
+      uploadOptions.notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
+    }
 
     // const overlayStep = { raw_transformation: JUST_THE_OVERLAY_TRANSFORMATION }; // Not used in this approach
 

@@ -1428,6 +1428,9 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       moderation: 'manual',
       moderation_async: true
     };
+    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
+      (explicitOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
+    }
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] explicit options:', explicitOptions);
       console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
@@ -1478,6 +1481,9 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       moderation: 'manual',
       moderation_async: true
     };
+    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
+      (explicitVideoOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
+    }
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] explicit video options:', explicitVideoOptions);
       console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
