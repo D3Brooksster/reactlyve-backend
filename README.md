@@ -194,6 +194,9 @@ in the new `moderation_status` and `moderation_details` columns on the
 Database changes required for these features are located in the
 `migrations` folder and include additional moderation columns and indexes.
 
+If you run the server from the compiled `dist` folder, remember to execute
+`npm run build` after pulling updates so the moderation queries are included.
+
 ## Running Tests
 
 The project is set up with Jest for unit and integration testing.

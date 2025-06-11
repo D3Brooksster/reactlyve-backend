@@ -1310,7 +1310,10 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
       console.log('[uploadReactionVideo] query:', updateQuery, 'params:', updateParams);
     }
 
-    await query(updateQuery, updateParams);
+    const result = await query(updateQuery, updateParams);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] updated rows:', result.rowCount);
+    }
 
     // Update isreply status of the parent message
     const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
