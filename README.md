@@ -143,8 +143,8 @@ The API provides several route groups for different functionalities:
     *   Listing users.
     *   Modifying user roles.
     *   Removing users.
-    *   Setting user message/reaction limits and moderation preferences.
-    *   Retrieving detailed user information.
+*   Setting user message/reaction limits and moderation preferences.
+*   Retrieving detailed user information, including moderation settings.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
 

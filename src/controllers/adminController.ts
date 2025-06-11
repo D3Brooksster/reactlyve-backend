@@ -8,7 +8,7 @@ import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rows: users } = await query(
-      'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
+      'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login, moderate_images, moderate_videos FROM users ORDER BY created_at DESC',
       []
     );
     const formattedUsers = users.map(user => ({
@@ -22,6 +22,8 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       createdAt: user.created_at,
       updatedAt: user.updated_at,
       lastLogin: user.last_login,
+      moderateImages: user.moderate_images ?? false,
+      moderateVideos: user.moderate_videos ?? false,
     }));
     res.json(formattedUsers);
     return;
@@ -317,8 +319,9 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       SELECT
         id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
         max_messages_per_month, current_messages_this_month,
-        max_reactions_per_month, reactions_received_this_month, -- Updated field
-        last_usage_reset_date, max_reactions_per_message
+        max_reactions_per_month, reactions_received_this_month,
+        last_usage_reset_date, max_reactions_per_message,
+        moderate_images, moderate_videos
       FROM users
       WHERE id = $1`;
     const { rows } = await query(selectQuery, [userId]);
@@ -354,7 +357,9 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       // max_reactions_per_message is the limit on reactions per message for messages created by this user
       maxReactionsPerMessage: user.max_reactions_per_message ?? null,
 
-      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null
+      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null,
+      moderateImages: user.moderate_images ?? false,
+      moderateVideos: user.moderate_videos ?? false
     });
     return;
   } catch (error) {
