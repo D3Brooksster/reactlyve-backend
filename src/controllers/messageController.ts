@@ -1425,7 +1425,8 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
     await cloudinary.uploader.explicit(extracted.public_id, {
       type: 'upload',
       resource_type: extracted.resource_type || 'image',
-      moderation: 'manual'
+      moderation: 'manual',
+      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL
     });
 
     if (process.env.NODE_ENV === 'development') {
@@ -1466,7 +1467,8 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
     await cloudinary.uploader.explicit(extracted.public_id, {
       type: 'upload',
       resource_type: extracted.resource_type || 'video',
-      moderation: 'manual'
+      moderation: 'manual',
+      notification_url: process.env.CLOUDINARY_NOTIFICATION_URL
     });
 
     if (process.env.NODE_ENV === 'development') {
