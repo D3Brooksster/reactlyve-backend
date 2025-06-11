@@ -167,6 +167,10 @@ export const sendMessage = (req: Request, res: Response) => {
 
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Moderation] Uploading ${mediaType} with moderation:`, mediaType === 'video' ? user.moderate_videos : user.moderate_images);
+        }
+
         if (mediaType === 'video') {
           const uploadResult = await uploadVideoToCloudinaryWithRetry(
             req.file.buffer,
@@ -180,6 +184,14 @@ export const sendMessage = (req: Request, res: Response) => {
             const mod = uploadResult.moderation[0];
             moderationStatus = mod.status || 'pending';
             moderationDetails = JSON.stringify(mod);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[Moderation] Video moderation result:`, mod);
+            }
+          } else if (user.moderate_videos) {
+            moderationStatus = 'pending';
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Moderation] Video moderation pending');
+            }
           }
         } else {
           const imgResult = await uploadToCloudinarymedia(
@@ -193,6 +205,14 @@ export const sendMessage = (req: Request, res: Response) => {
             const mod = imgResult.moderation[0];
             moderationStatus = mod.status || 'pending';
             moderationDetails = JSON.stringify(mod);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[Moderation] Image moderation result:`, mod);
+            }
+          } else if (user.moderate_images) {
+            moderationStatus = 'pending';
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Moderation] Image moderation pending');
+            }
           }
         }
       }
@@ -207,6 +227,10 @@ export const sendMessage = (req: Request, res: Response) => {
       );
 
       const message = rows[0];
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Moderation] Message ${message.id} stored with status ${moderationStatus}`);
+      }
 
       // ---- START INCREMENT MESSAGE COUNT ----
       try {
@@ -810,8 +834,14 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
         const mod = vidModeration[0];
         moderationStatus = mod.status || 'pending';
         moderationDetails = JSON.stringify(mod);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation result:', mod);
+        }
       } else {
         moderationStatus = 'pending';
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation pending');
+        }
       }
     }
 
@@ -831,6 +861,9 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     if (insertedReaction.length > 0 && insertedReaction[0].id) {
       const newReactionId = insertedReaction[0].id;
       console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Moderation] Reaction ${newReactionId} stored with status ${moderationStatus}`);
+      }
 
       // Update isreply status of the parent message (existing logic)
       query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId])
