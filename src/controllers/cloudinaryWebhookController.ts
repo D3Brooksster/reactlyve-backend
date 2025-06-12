@@ -9,7 +9,8 @@ import {
 const explicitWithRetry = async (
   publicId: string,
   options: Record<string, any>,
-  retries = 1
+  retries = 3,
+  delayMs = 2000
 ) => {
   try {
     const result = await cloudinary.uploader.explicit(publicId, options);
@@ -20,16 +21,16 @@ const explicitWithRetry = async (
   } catch (err: any) {
     if (
       err &&
-      (err.http_code === 404 || err.http_code >= 500) &&
+      (err.http_code === 404 || err.http_code >= 500 || err.http_code === 409 || err.http_code === 423) &&
       retries > 0
     ) {
       if (process.env.NODE_ENV === 'development') {
         console.warn(
-          `[explicitWithRetry] ${err.message || 'Error'} (code ${err.http_code}), retrying...`
+          `[explicitWithRetry] ${err.message || 'Error'} (code ${err.http_code}), retrying in ${delayMs}ms...`
         );
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return explicitWithRetry(publicId, options, retries - 1);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return explicitWithRetry(publicId, options, retries - 1, delayMs);
     }
     throw err;
   }
@@ -102,7 +103,8 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
                 { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING },
                 { format: 'jpg', crop: 'thumb', width: 200, height: 150, start_offset: '0', quality: 'auto' }
               ]
-            : [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }]
+            : [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }],
+        invalidate: true
       };
 
       if (process.env.CLOUDINARY_NOTIFICATION_URL) {

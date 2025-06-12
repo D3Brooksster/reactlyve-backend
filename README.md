@@ -210,8 +210,11 @@ automatically retries once after a short delay.
 If a webhook is configured in Cloudinary, the final decision will be posted back
 to the backend. When a moderation decision is returned with status `approved`,
 the webhook handler calls Cloudinary's `explicit` API to generate the overlay
-and thumbnail derivatives so they appear alongside the original asset. Rejected
-assets will not have derivatives until they are manually approved.
+and thumbnail derivatives so they appear alongside the original asset.
+To avoid race conditions where Cloudinary reports the asset too soon,
+the server now retries the `explicit` request several times with a short
+delay. Rejected assets will not have derivatives until they are manually
+approved.
 
 Video moderation results may arrive asynchronously via Cloudinary. The
 `/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
