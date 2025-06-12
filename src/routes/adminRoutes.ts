@@ -6,6 +6,7 @@ import {
   removeUser,
   setUserLimits, // Added import
   getUserDetails // Added import
+  , getModerationSummary, getUserPendingModeration
 } from '../controllers/adminController';
 import {
   requireAuth,
@@ -47,6 +48,26 @@ router.get(
   requireAuth,
   requireAdminRole,
   getUserDetails
+);
+
+// @route   GET /api/admin/moderation/pending-counts
+// @desc    Get count of manual review items for all users
+// @access  Private (Admin)
+router.get(
+  '/moderation/pending-counts',
+  requireAuth,
+  requireAdminRole,
+  getModerationSummary
+);
+
+// @route   GET /api/admin/users/:userId/pending-moderation
+// @desc    Get Cloudinary IDs of items awaiting manual review for a user
+// @access  Private (Admin)
+router.get(
+  '/users/:userId/pending-moderation',
+  requireAuth,
+  requireAdminRole,
+  getUserPendingModeration
 );
 
 export default router;

@@ -35,7 +35,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     maxReactionsPerMonth: user.max_reactions_per_month ?? null, // Max reactions user's messages can receive
     reactionsReceivedThisMonth: user.reactions_received_this_month ?? 0, // Reactions received by user's messages
     lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null,
-    maxReactionsPerMessage: user.max_reactions_per_message ?? null // Max reactions per message for messages sent by user
+    maxReactionsPerMessage: user.max_reactions_per_message ?? null, // Max reactions per message for messages sent by user
+    moderateImages: user.moderate_images ?? false,
+    moderateVideos: user.moderate_videos ?? false
   });
   return;
 };
@@ -193,27 +195,45 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
   }
 
   const userId = (req.user as AppUser).id;
-  const { lastUsageResetDate } = req.body;
+  const { lastUsageResetDate, moderateImages, moderateVideos } = req.body;
 
-  if (!lastUsageResetDate) {
-    res.status(400).json({ error: 'lastUsageResetDate is required' });
-    return;
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[updateMyProfile] incoming body for user %s:', userId, req.body);
   }
 
   try {
-    // Validate lastUsageResetDate format if necessary (e.g., using a library like date-fns)
-    // For now, assuming it's a valid date string recognizable by PostgreSQL
+    const fields: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (lastUsageResetDate) {
+      fields.push(`last_usage_reset_date = $${idx++}`);
+      params.push(lastUsageResetDate);
+    }
+    if (typeof moderateImages === 'boolean') {
+      fields.push(`moderate_images = $${idx++}`);
+      params.push(moderateImages);
+    }
+    if (typeof moderateVideos === 'boolean') {
+      fields.push(`moderate_videos = $${idx++}`);
+      params.push(moderateVideos);
+    }
+    if (fields.length === 0) {
+      res.status(400).json({ error: 'No valid fields provided' });
+      return;
+    }
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    params.push(userId);
 
-    const updateQuery = `
-      UPDATE users
-      SET last_usage_reset_date = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-      RETURNING *;
-    `;
-    // RETURNING * might be too broad if there's sensitive data not meant for immediate return.
-    // However, for a profile update, returning the updated user object is common.
+    const updateQuery = `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *;`;
 
-    const { rows: updatedUsers } = await query(updateQuery, [lastUsageResetDate, userId]);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] query:', updateQuery, 'params:', params);
+    }
+
+    const { rows: updatedUsers, rowCount } = await query(updateQuery, params);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] affected rows:', rowCount);
+    }
 
     if (updatedUsers.length === 0) {
       // This case should ideally not happen if req.user.id is valid and comes from an authenticated session
@@ -222,6 +242,10 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
     }
 
     const updatedUser = updatedUsers[0] as AppUser;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] updated user:', updatedUser);
+    }
 
     // Respond with the updated user profile, similar to getMyProfile
     res.json({
@@ -240,7 +264,9 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
       maxReactionsPerMonth: updatedUser.max_reactions_per_month ?? null,
       reactionsReceivedThisMonth: updatedUser.reactions_received_this_month ?? 0,
       lastUsageResetDate: updatedUser.last_usage_reset_date ? new Date(updatedUser.last_usage_reset_date).toISOString() : null,
-      maxReactionsPerMessage: updatedUser.max_reactions_per_message ?? null
+      maxReactionsPerMessage: updatedUser.max_reactions_per_message ?? null,
+      moderateImages: updatedUser.moderate_images ?? false,
+      moderateVideos: updatedUser.moderate_videos ?? false
     });
 
   } catch (error) {

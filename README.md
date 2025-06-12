@@ -66,6 +66,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
 
 *   **Development Mode:**
     The application uses `ts-node-dev` for live reloading during development.
+    The `npm run dev` script sets `NODE_ENV=development` so debug logs (such as profile update logging) are printed.
     ```bash
     npm run dev
     ```
@@ -112,10 +113,16 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
-# AWS Credentials (for future file storage features)
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
+# Notification URL for Cloudinary to POST moderation results
+# This value is included with each upload and manual review request so
+# callbacks are sent directly to your server. If unset, Cloudinary will
+# use any account-level webhook you have configured.
+CLOUDINARY_NOTIFICATION_URL=http://localhost:3000/api/webhooks/cloudinary
+
+# The URL must be publicly accessible. Check the Cloudinary dashboard for
+# failed webhook attempts when debugging callbacks.
+
+# Cloudinary's AWS Rekognition add-on handles moderation, so no additional AWS keys are required
 
 # File Uploads
 UPLOAD_DIR=uploads
@@ -140,13 +147,39 @@ The API provides several route groups for different functionalities:
 *   **`/api/profile`**: User profile operations.
     *   Viewing user's own profile.
     *   Deleting user's own account.
-    *   Updating profile settings.
+    *   Updating profile settings, including moderation preferences.
 *   **`/api/admin`**: Admin-specific operations.
     *   Listing users.
     *   Modifying user roles.
     *   Removing users.
-    *   Setting user message/reaction limits.
-    *   Retrieving detailed user information.
+*   Setting user message/reaction limits and moderation preferences.
+*   Retrieving detailed user information, including moderation settings.
+*   Getting pending moderation counts for all users via `GET /api/admin/moderation/pending-counts`.
+    The response for each user contains `messages_pending`, `reactions_pending`,
+    and `pending_manual_reviews` (the sum of the two). Example:
+
+    ```json
+    [
+      {
+        "id": "<user-id>",
+        "email": "user@example.com",
+        "name": "Jane",
+        "messages_pending": 1,
+        "reactions_pending": 0,
+        "pending_manual_reviews": 1
+      }
+    ]
+    ```
+*   Fetching Cloudinary IDs of items awaiting manual review for a specific user.
+    Use `GET /api/admin/users/:userId/pending-moderation`, which returns:
+
+    ```json
+    {
+      "messages": [ { "id": "<uuid>", "publicId": "messages/abc123" } ],
+      "reactions": [ { "id": "<uuid>", "publicId": "reactions/def456" } ]
+    }
+    ```
+*   **`/api/webhooks`**: Endpoints for third-party callbacks, currently handling Cloudinary moderation results.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
 
@@ -182,6 +215,50 @@ A brief overview of key directories within the `src/` folder:
 *   `src/routes`: Defines the API routes and maps them to controller functions.
 *   `src/utils`: Utility functions and helper modules (e.g., `cloudinaryUtils.ts` for Cloudinary interactions).
 *   `migrations/`: Contains SQL migration files for evolving the database schema over time.
+
+## Moderation Workflow
+
+Image and video uploads can be automatically checked for inappropriate content.
+Users may enable or disable moderation from the frontend. Guest accounts start
+with both image and video moderation enabled by default. When enabled, uploads
+are scanned using Cloudinary's AWS Rekognition add-on (`aws_rek` for images and
+`aws_rek_video` for videos) and the results are stored
+in the new `moderation_status` and `moderation_details` columns on the
+`messages` and `reactions` tables. Assets that are flagged are marked as
+`rejected` and can be submitted for manual review via the
+`/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
+When moderation is turned off for a user, the stored status is `not_required`.
+These endpoints now simply mark the record as `manual_review` without
+re-submitting the asset to Cloudinary. Moderators can override the rejection
+directly from the AWS Rekognition tab in the Cloudinary console.
+If a webhook is configured in Cloudinary, the final decision will be posted back
+to the backend. When a moderation decision is returned with status `approved`,
+the webhook handler calls Cloudinary's `explicit` API to generate the overlay
+and thumbnail derivatives so they appear alongside the original asset.
+To avoid race conditions where Cloudinary reports the asset too soon,
+the server now retries the `explicit` request several times with a short
+delay. Rejected assets will not have derivatives until they are manually
+approved.
+
+Video moderation results may arrive asynchronously via Cloudinary. The
+`/api/webhooks/cloudinary` endpoint receives these callbacks and updates the
+database once moderation is complete.
+
+If callbacks do not appear, confirm the endpoint is publicly reachable and check
+the "Webhooks" log in your Cloudinary dashboard for delivery attempts.
+
+When running in development mode, both upload requests and incoming webhook
+payloads are printed to the console so you can verify Cloudinary is attempting
+to reach the backend. The logged upload output now includes the complete POST
+body sent to Cloudinary for easier debugging of moderation settings.
+The webhook handler also logs the response from Cloudinary's `explicit` API,
+so you can confirm derived assets were generated.
+
+Database changes required for these features are located in the
+`migrations` folder and include additional moderation columns and indexes.
+
+If you run the server from the compiled `dist` folder, remember to execute
+`npm run build` after pulling updates so the moderation queries are included.
 
 ## Running Tests
 

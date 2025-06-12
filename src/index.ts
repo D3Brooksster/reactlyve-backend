@@ -8,10 +8,23 @@ import authRoutes from './routes/authRoutes';
 import messageRoutes from './routes/messageRoutes';
 import userProfileRoutes from './routes/userProfileRoutes';
 import adminRoutes from './routes/adminRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 
 // Import for cron job
 import cron from 'node-cron';
 import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
+
+// Silence console.log and console.warn in production
+if (process.env.NODE_ENV !== 'development') {
+  console.log = () => {};
+  console.warn = () => {};
+}
+
+// Silence console.log and console.warn in production
+if (process.env.NODE_ENV !== 'development') {
+  console.log = () => {};
+  console.warn = () => {};
+}
 
 const app = express();
 app.set('trust proxy', 2);
@@ -51,6 +64,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', messageRoutes); // Assuming this is for general messages, e.g. /api/messages
 app.use('/api/profile', userProfileRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 app.get(
   "/",
@@ -62,6 +76,10 @@ app.get(
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const server = app.listen(PORT, async () => {
   console.log(`Server listening on port ${PORT} in ${process.env.NODE_ENV}`);
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Cloudinary notification URL (if any):', process.env.CLOUDINARY_NOTIFICATION_URL || 'using account webhook');
+  }
 
   // Schedule the inactive account cleanup job
   cron.schedule('0 0 * * *', async () => {

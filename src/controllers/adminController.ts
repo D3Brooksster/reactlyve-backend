@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
+import { deleteFromCloudinary, extractPublicIdAndResourceType } from '../utils/cloudinaryUtils';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rows: users } = await query(
-      'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login FROM users ORDER BY created_at DESC',
+      'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login, moderate_images, moderate_videos FROM users ORDER BY created_at DESC',
       []
     );
     const formattedUsers = users.map(user => ({
@@ -22,6 +22,8 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
       createdAt: user.created_at,
       updatedAt: user.updated_at,
       lastLogin: user.last_login,
+      moderateImages: user.moderate_images ?? false,
+      moderateVideos: user.moderate_videos ?? false,
     }));
     res.json(formattedUsers);
     return;
@@ -194,8 +196,16 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     max_messages_per_month,
     max_reactions_per_month,
     max_reactions_per_message,
-    last_usage_reset_date // Added
+    last_usage_reset_date,
+    moderate_images,
+    moderate_videos
   } = req.body;
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[setUserLimits] incoming body for user %s:', userId, req.body);
+  } else {
+    console.log('[setUserLimits] request for user %s', userId);
+  }
 
   // Basic validation
   if (max_messages_per_month !== undefined && max_messages_per_month !== null && typeof max_messages_per_month !== 'number') {
@@ -208,6 +218,14 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   }
   if (max_reactions_per_message !== undefined && max_reactions_per_message !== null && typeof max_reactions_per_message !== 'number') {
     res.status(400).json({ error: 'Invalid max_reactions_per_message, must be a number or null.' });
+    return;
+  }
+  if (moderate_images !== undefined && typeof moderate_images !== 'boolean') {
+    res.status(400).json({ error: 'Invalid moderate_images value, must be boolean.' });
+    return;
+  }
+  if (moderate_videos !== undefined && typeof moderate_videos !== 'boolean') {
+    res.status(400).json({ error: 'Invalid moderate_videos value, must be boolean.' });
     return;
   }
 
@@ -238,6 +256,15 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
       values.push(max_reactions_per_message);
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'moderate_images')) {
+      fieldsToUpdate.push(`moderate_images = $${queryParamIndex++}`);
+      values.push(moderate_images);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'moderate_videos')) {
+      fieldsToUpdate.push(`moderate_videos = $${queryParamIndex++}`);
+      values.push(moderate_videos);
+    }
+
     // Add last_usage_reset_date to update if provided
     if (Object.prototype.hasOwnProperty.call(req.body, 'last_usage_reset_date')) {
       if (last_usage_reset_date === null) {
@@ -261,13 +288,23 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     values.push(userId);
     const updateUserQuery = `UPDATE users SET ${fieldsToUpdate.join(', ')} WHERE id = $${queryParamIndex} RETURNING *;`;
 
-    const { rows } = await query(updateUserQuery, values);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[setUserLimits] query:', updateUserQuery, 'params:', values);
+    }
+
+    const { rows, rowCount } = await query(updateUserQuery, values);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[setUserLimits] affected rows:', rowCount);
+    }
     if (rows.length === 0) {
       res.status(404).json({ error: 'User not found or update failed.' });
       return;
     }
     // Return all fields of the updated user, as fetched by RETURNING *
     const updatedUser = rows[0] as AppUser;
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[setUserLimits] updated user:', updatedUser);
+    }
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
       await query('UPDATE messages SET max_reactions_allowed = $1 WHERE senderid = $2', [req.body.max_reactions_per_message, userId]);
@@ -290,8 +327,9 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       SELECT
         id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
         max_messages_per_month, current_messages_this_month,
-        max_reactions_per_month, reactions_received_this_month, -- Updated field
-        last_usage_reset_date, max_reactions_per_message
+        max_reactions_per_month, reactions_received_this_month,
+        last_usage_reset_date, max_reactions_per_message,
+        moderate_images, moderate_videos
       FROM users
       WHERE id = $1`;
     const { rows } = await query(selectQuery, [userId]);
@@ -327,12 +365,84 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       // max_reactions_per_message is the limit on reactions per message for messages created by this user
       maxReactionsPerMessage: user.max_reactions_per_message ?? null,
 
-      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null
+      lastUsageResetDate: user.last_usage_reset_date ? new Date(user.last_usage_reset_date).toISOString() : null,
+      moderateImages: user.moderate_images ?? false,
+      moderateVideos: user.moderate_videos ?? false
     });
     return;
   } catch (error) {
     console.error('Error getting user details:', error);
     res.status(500).json({ error: 'Failed to get user details.' });
+    return;
+  }
+};
+
+export const getModerationSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { rows } = await query(
+      `SELECT u.id,
+              u.email,
+              u.name,
+              COALESCE(m.msg_count, 0) AS messages_pending,
+              COALESCE(r.react_count, 0) AS reactions_pending,
+              COALESCE(m.msg_count, 0) + COALESCE(r.react_count, 0) AS pending_manual_reviews
+       FROM users u
+       LEFT JOIN (
+         SELECT senderid AS user_id, COUNT(*) AS msg_count
+         FROM messages
+         WHERE moderation_status = 'manual_review'
+         GROUP BY senderid
+       ) m ON m.user_id = u.id
+       LEFT JOIN (
+         SELECT m.senderid AS user_id, COUNT(*) AS react_count
+         FROM reactions r
+         JOIN messages m ON r.messageid = m.id
+         WHERE r.moderation_status = 'manual_review'
+         GROUP BY m.senderid
+       ) r ON r.user_id = u.id
+       ORDER BY u.created_at DESC`
+    );
+    res.json(rows);
+    return;
+  } catch (error) {
+    console.error('Error fetching moderation summary:', error);
+    res.status(500).json({ error: 'Failed to fetch moderation summary.' });
+    return;
+  }
+};
+
+export const getUserPendingModeration = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  try {
+    const { rows: msgRows } = await query(
+      `SELECT id, COALESCE(original_imageurl, imageurl) AS url
+       FROM messages
+       WHERE senderid = $1 AND moderation_status = 'manual_review'`,
+      [userId]
+    );
+
+    const { rows: reactionRows } = await query(
+      `SELECT r.id, COALESCE(r.original_videourl, r.videourl) AS url
+       FROM reactions r
+       JOIN messages m ON r.messageid = m.id
+       WHERE m.senderid = $1 AND r.moderation_status = 'manual_review'`,
+      [userId]
+    );
+
+    const toPublicId = (url: string | null) => {
+      if (!url) return null;
+      const extracted = extractPublicIdAndResourceType(url);
+      return extracted ? extracted.public_id : null;
+    };
+
+    const messages = msgRows.map(row => ({ id: row.id, publicId: toPublicId(row.url) }));
+    const reactions = reactionRows.map(row => ({ id: row.id, publicId: toPublicId(row.url) }));
+
+    res.json({ messages, reactions });
+    return;
+  } catch (error) {
+    console.error('Error fetching pending moderation for user %s:', userId, error);
+    res.status(500).json({ error: 'Failed to fetch pending moderation items.' });
     return;
   }
 };

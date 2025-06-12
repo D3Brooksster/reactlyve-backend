@@ -7,7 +7,11 @@ import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary, uploadToCloudinarymedia, uploadVideoToCloudinary } from '../utils/cloudinaryUtils';
+import {
+  deleteFromCloudinary,
+  uploadToCloudinarymedia,
+  uploadVideoToCloudinary
+} from '../utils/cloudinaryUtils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -45,6 +49,54 @@ const generateShareableLink = (): string => {
   const baseUrl = process.env.FRONTEND_URL || '';
   const uniqueId = crypto.randomBytes(8).toString('hex');
   return `${baseUrl}/m/${uniqueId}`;
+};
+
+const uploadVideoToCloudinaryWithRetry = async (
+  buffer: Buffer,
+  size: number,
+  folder: string,
+  options: Record<string, any>,
+  retries = 1
+) => {
+  try {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadVideoToCloudinaryWithRetry] Attempting upload');
+    }
+    return await uploadVideoToCloudinary(buffer, size, folder, options);
+  } catch (err: any) {
+    if (retries > 0 && err && err.http_code === 499) {
+      console.warn('[uploadVideoToCloudinaryWithRetry] Timeout, retrying upload');
+      return await uploadVideoToCloudinary(buffer, size, folder, options);
+    }
+    console.error('[uploadVideoToCloudinaryWithRetry] Upload failed:', err);
+    throw err;
+  }
+};
+
+const explicitWithRetry = async (
+  publicId: string,
+  options: Record<string, any>,
+  retries = 3,
+  delayMs = 2000
+) => {
+  try {
+    return await cloudinary.uploader.explicit(publicId, options);
+  } catch (err: any) {
+    if (
+      err &&
+      (err.http_code === 404 || err.http_code >= 500 || err.http_code === 409 || err.http_code === 423) &&
+      retries > 0
+    ) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          `[explicitWithRetry] ${err.message || 'Error'} (code ${err.http_code}), retrying in ${delayMs}ms...`
+        );
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return explicitWithRetry(publicId, options, retries - 1, delayMs);
+    }
+    throw err;
+  }
 };
 
 // === Controllers ===
@@ -139,16 +191,71 @@ export const sendMessage = (req: Request, res: Response) => {
 
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
+      let moderationStatus = 'not_required';
+      let moderationDetails: string | null = null;
+      let originalUrl: string | null = null;
 
       if (req.file) {
         mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Moderation] Uploading ${mediaType} with moderation:`, mediaType === 'video' ? user.moderate_videos : user.moderate_images);
+        }
+
         if (mediaType === 'video') {
-          // The problem description mentions that uploadVideoToCloudinary will be updated
-          // to accept a folder argument. We are assuming it's the second argument.
-          const uploadResult = await uploadVideoToCloudinary(req.file.buffer, req.file.size, 'messages');
-          mediaUrl = uploadResult.secure_url; // Assuming uploadVideoToCloudinary returns an object with secure_url
+          const uploadResult = await uploadVideoToCloudinaryWithRetry(
+            req.file.buffer,
+            req.file.size,
+            'messages',
+            user.moderate_videos ? { moderation: 'aws_rek_video' } : {}
+          );
+          mediaUrl = uploadResult.secure_url;
+          originalUrl = mediaUrl;
+          if (user.moderate_videos && uploadResult.moderation) {
+            const mod = Array.isArray(uploadResult.moderation)
+              ? uploadResult.moderation[0]
+              : uploadResult.moderation;
+            if (typeof mod === 'object') {
+              moderationStatus = mod.status || 'pending';
+            } else if (typeof mod === 'string') {
+              moderationStatus = mod;
+            }
+            moderationDetails = JSON.stringify(mod);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[Moderation] Video moderation result:`, mod);
+            }
+          } else if (user.moderate_videos) {
+            moderationStatus = 'pending';
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Moderation] Video moderation pending');
+            }
+          }
         } else {
-          mediaUrl = await uploadToCloudinarymedia(req.file.buffer, mediaType as 'image');
+          const imgResult = await uploadToCloudinarymedia(
+            req.file.buffer,
+            'image',
+            user.moderate_images ? { moderation: 'aws_rek' } : {}
+          );
+          mediaUrl = imgResult.secure_url;
+          originalUrl = mediaUrl;
+          if (user.moderate_images && imgResult.moderation) {
+            const mod = Array.isArray(imgResult.moderation)
+              ? imgResult.moderation[0]
+              : imgResult.moderation;
+            if (typeof mod === 'object') {
+              moderationStatus = mod.status || 'pending';
+            } else if (typeof mod === 'string') {
+              moderationStatus = mod;
+            }
+            moderationDetails = JSON.stringify(mod);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[Moderation] Image moderation result:`, mod);
+            }
+          } else if (user.moderate_images) {
+            moderationStatus = 'pending';
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Moderation] Image moderation pending');
+            }
+          }
         }
       }
 
@@ -156,12 +263,16 @@ export const sendMessage = (req: Request, res: Response) => {
       const mediaSize = req.file ? req.file.size : null;
 
       const { rows } = await query(
-        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size, max_reactions_allowed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, maxReactionsAllowedForMessage]
+        `INSERT INTO messages (senderid, content, imageurl, passcode, shareablelink, mediatype, reaction_length, media_size, max_reactions_allowed, moderation_status, moderation_details, original_imageurl)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+        [senderId, content, mediaUrl, passcode || null, shareableLink, mediaType, validatedReactionLength, mediaSize, maxReactionsAllowedForMessage, moderationStatus, moderationDetails, originalUrl]
       );
 
       const message = rows[0];
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Moderation] Message ${message.id} stored with status ${moderationStatus}`);
+      }
 
       // ---- START INCREMENT MESSAGE COUNT ----
       try {
@@ -703,16 +814,10 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
 };
 
 export const recordReaction = async (req: Request, res: Response): Promise<void> => {
-  console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
+  if (process.env.NODE_ENV === 'development') {
+    console.log("[RecordReactionLog] Entering function. req.params.id:", req.params.id);
+  }
   try {
-    // === REACTION AUTHOR (REACTOR) CHECK ===
-    if (!req.user) {
-      console.warn("[RecordReactionLog] Attempt to record reaction without authentication.");
-      res.status(401).json({ error: 'Authentication required to record reactions.' });
-      return;
-    }
-    const reactor = req.user as AppUser; // Authenticated user recording the reaction
-    console.log("[RecordReactionLog] Reaction author (reactor) ID:", reactor.id);
 
     const { id: messageId_param } = req.params; // Message ID or shareable link part
     const { name } = req.body; // Name for the reaction (optional)
@@ -729,36 +834,80 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
     const messageResult = await query(messageQueryText, [messageId_param, `%${messageId_param}%`]);
 
     if (messageResult.rows.length === 0) {
-      console.log(`[RecordReactionLog] Message not found for param: ${messageId_param}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[RecordReactionLog] Message not found for param: ${messageId_param}`);
+      }
       res.status(404).json({ error: 'Message not found.' });
       return;
     }
     const messageDetails = messageResult.rows[0];
     const actualMessageId = messageDetails.actual_message_id; // This is the true UUID of the message
     // messageSenderId is available from messageDetails.senderid for updating 'isreply' via actualMessageId.
-    console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[RecordReactionLog] Resolved message. Actual ID: ${actualMessageId}, Sender ID: ${messageDetails.senderid}`);
+    }
 
     // Limit checks (sender and per-message) are now handled by initReaction.
     // Reactor authentication is handled by middleware.
     // This function now directly proceeds to file upload and reaction recording.
 
     if (!req.file) {
-      console.log("[RecordReactionLog] No reaction video provided.");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("[RecordReactionLog] No reaction video provided.");
+      }
       res.status(400).json({ error: 'No reaction video provided' });
       return;
     }
 
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
+    const senderPrefRes = await query('SELECT moderate_videos FROM users WHERE id = $1', [messageDetails.senderid]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[recordReaction] sender moderate_videos:', moderateVideos);
+    }
+
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
+      req.file.buffer,
+      req.file.size,
+      'reactions',
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
+    );
     const durationInSeconds = videoDuration !== null ? Math.round(videoDuration) : 0;
-    console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
+    }
+
+    let moderationStatus = 'not_required';
+    let moderationDetails: string | null = null;
+    let originalVideoUrl = actualVideoUrl;
+    if (moderateVideos) {
+      if (vidModeration) {
+        const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
+        if (typeof mod === 'object') {
+          moderationStatus = mod.status || 'pending';
+        } else if (typeof mod === 'string') {
+          moderationStatus = mod;
+        }
+        moderationDetails = JSON.stringify(mod);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation result:', mod);
+        }
+      } else {
+        moderationStatus = 'pending';
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation pending');
+        }
+      }
+    }
 
     const reactionInsertQuery = `
-      INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''})
-      VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}) RETURNING id`;
+      INSERT INTO reactions (messageid, videourl, thumbnailurl, duration, createdat, updatedat${name ? ', name' : ''}, moderation_status, moderation_details, original_videourl)
+      VALUES ($1, $2, $3, $4, NOW(), NOW()${name ? ', $5' : ''}, $${name ? '6' : '5'}, $${name ? '7' : '6'}, $${name ? '8' : '7'}) RETURNING id`;
     const reactionQueryParams = [actualMessageId, actualVideoUrl, actualThumbnailUrl, durationInSeconds];
     if (name) {
       reactionQueryParams.push(name);
     }
+    reactionQueryParams.push(moderationStatus, moderationDetails, originalVideoUrl);
     const { rows: insertedReaction } = await query(reactionInsertQuery, reactionQueryParams);
 
     // REMOVED: Increment Sender's `reactions_received_this_month` (now handled by initReaction)
@@ -766,11 +915,18 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
 
     if (insertedReaction.length > 0 && insertedReaction[0].id) {
       const newReactionId = insertedReaction[0].id;
-      console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log("[RecordReactionLog] Reaction successfully inserted into DB. Reaction ID:", newReactionId);
+        console.log(`[Moderation] Reaction ${newReactionId} stored with status ${moderationStatus}`);
+      }
 
       // Update isreply status of the parent message (existing logic)
       query('UPDATE messages SET isreply = true WHERE id = $1', [actualMessageId])
-        .then(() => console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`))
+        .then(() => {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[RecordReactionLog] Successfully updated isreply for message ${actualMessageId}`);
+          }
+        })
         .catch(err => console.error(`[RecordReactionLog] Failed to update isreply for message ${actualMessageId}:`, err));
 
       res.status(201).json({
@@ -1175,16 +1331,66 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
   }
 
   try {
-    // Destructure new return values from uploadVideoToCloudinary
-    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration } = await uploadVideoToCloudinary(req.file.buffer, req.file.size);
+    // Determine moderation preference based on the owner of the parent message
+    const reactionRes = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
+    if (!reactionRes.rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
+    const messageId = reactionRes.rows[0].messageid;
+    const senderPrefRes = await query('SELECT senderid, moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] message owner moderate_videos:', moderateVideos);
+    }
+
+    const { secure_url: actualVideoUrl, thumbnail_url: actualThumbnailUrl, duration: videoDuration, moderation: vidModeration } = await uploadVideoToCloudinaryWithRetry(
+      req.file.buffer,
+      req.file.size,
+      'reactions',
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
+    );
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
-    await query(
-      `UPDATE reactions
-       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW()
-       WHERE id = $4`,
-      [actualVideoUrl, actualThumbnailUrl, duration, reactionId]
-    );
+    let moderationStatus = 'not_required';
+    let moderationDetails: string | null = null;
+    let originalVideoUrl = actualVideoUrl;
+
+    if (moderateVideos) {
+      if (vidModeration) {
+        const mod = Array.isArray(vidModeration) ? vidModeration[0] : vidModeration;
+        if (typeof mod === 'object') {
+          moderationStatus = mod.status || 'pending';
+        } else if (typeof mod === 'string') {
+          moderationStatus = mod;
+        }
+        moderationDetails = JSON.stringify(mod);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation result:', mod);
+        }
+      } else {
+        moderationStatus = 'pending';
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Moderation] Reaction video moderation pending');
+        }
+      }
+    }
+
+    const updateQuery = `UPDATE reactions
+       SET videourl = $1, thumbnailurl = $2, duration = $3, updatedat = NOW(),
+           moderation_status = $4, moderation_details = $5, original_videourl = $6
+       WHERE id = $7`;
+    const updateParams = [actualVideoUrl, actualThumbnailUrl, duration, moderationStatus, moderationDetails, originalVideoUrl, reactionId];
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] query:', updateQuery, 'params:', updateParams);
+    }
+
+    const result = await query(updateQuery, updateParams);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[uploadReactionVideo] updated rows:', result.rowCount);
+    }
 
     // Update isreply status of the parent message
     const reactionResult = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
@@ -1234,6 +1440,52 @@ export const getReactionsByMessageId = async (req: Request, res: Response): Prom
   } catch (error) {
     console.error('Error fetching reactions by message ID:', error);
     res.status(500).json({ error: 'Failed to fetch reactions' });
+    return;
+  }
+};
+
+export const submitMessageForManualReview = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const { rows } = await query('SELECT imageurl FROM messages WHERE id = $1', [id]);
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Message manual review request:', { id, imageUrl: rows[0].imageurl });
+    }
+
+    await query('UPDATE messages SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
+    res.status(200).json({ success: true });
+    return;
+  } catch (err) {
+    console.error('Manual review submission failed:', err);
+    res.status(500).json({ error: 'Failed to submit for manual review' });
+    return;
+  }
+};
+
+export const submitReactionForManualReview = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const { rows } = await query('SELECT videourl FROM reactions WHERE id = $1', [id]);
+    if (!rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] Reaction manual review request:', { id, videoUrl: rows[0].videourl });
+    }
+
+    await query('UPDATE reactions SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
+    res.status(200).json({ success: true });
+    return;
+  } catch (err) {
+    console.error('Manual review submission failed:', err);
+    res.status(500).json({ error: 'Failed to submit for manual review' });
     return;
   }
 };
