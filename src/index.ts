@@ -14,6 +14,12 @@ import webhookRoutes from './routes/webhookRoutes';
 import cron from 'node-cron';
 import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
 
+// Silence console.log and console.warn in production
+if (process.env.NODE_ENV !== 'development') {
+  console.log = () => {};
+  console.warn = () => {};
+}
+
 const app = express();
 app.set('trust proxy', 2);
 
