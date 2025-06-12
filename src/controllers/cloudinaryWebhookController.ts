@@ -76,7 +76,7 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
       }
     }
 
-    if (moderation_status === 'approved') {
+    if (moderation_status === 'approved' || moderation_status === 'rejected') {
       let resourceType = req.body.resource_type as string | undefined;
 
       if (!resourceType && (msgUpdate.rowCount ?? 0) > 0) {
