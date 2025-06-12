@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary } from '../utils/cloudinaryUtils';
+import { deleteFromCloudinary, extractPublicIdAndResourceType } from '../utils/cloudinaryUtils';
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
@@ -373,6 +373,62 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error('Error getting user details:', error);
     res.status(500).json({ error: 'Failed to get user details.' });
+    return;
+  }
+};
+
+export const getModerationSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { rows } = await query(
+      `SELECT u.id, u.email, u.name,
+              COUNT(m.*) FILTER (WHERE m.moderation_status = 'manual_review') AS messages_pending,
+              COUNT(r.*) FILTER (WHERE r.moderation_status = 'manual_review') AS reactions_pending
+       FROM users u
+       LEFT JOIN messages m ON m.senderid = u.id
+       LEFT JOIN reactions r ON r.messageid = m.id
+       GROUP BY u.id
+       ORDER BY u.created_at DESC`
+    );
+    res.json(rows);
+    return;
+  } catch (error) {
+    console.error('Error fetching moderation summary:', error);
+    res.status(500).json({ error: 'Failed to fetch moderation summary.' });
+    return;
+  }
+};
+
+export const getUserPendingModeration = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  try {
+    const { rows: msgRows } = await query(
+      `SELECT id, original_imageurl FROM messages
+       WHERE senderid = $1 AND moderation_status = 'manual_review'`,
+      [userId]
+    );
+
+    const { rows: reactionRows } = await query(
+      `SELECT r.id, r.original_videourl
+       FROM reactions r
+       JOIN messages m ON r.messageid = m.id
+       WHERE m.senderid = $1 AND r.moderation_status = 'manual_review'`,
+      [userId]
+    );
+
+    const toPublicId = (url: string | null) => {
+      if (!url) return null;
+      const extracted = extractPublicIdAndResourceType(url);
+      return extracted ? extracted.public_id : null;
+    };
+
+    const messages = msgRows.map(row => ({ id: row.id, publicId: toPublicId(row.original_imageurl) }));
+    const reactions = reactionRows.map(row => ({ id: row.id, publicId: toPublicId(row.original_videourl) }));
+
+    res.json({ messages, reactions });
+    return;
+  } catch (error) {
+    console.error('Error fetching pending moderation for user %s:', userId, error);
+    res.status(500).json({ error: 'Failed to fetch pending moderation items.' });
     return;
   }
 };
