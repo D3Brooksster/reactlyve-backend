@@ -10,10 +10,7 @@ import { AppUser } from '../entity/User'; // Changed User to AppUser
 import {
   deleteFromCloudinary,
   uploadToCloudinarymedia,
-  uploadVideoToCloudinary,
-  extractPublicIdAndResourceType,
-  IMAGE_OVERLAY_TRANSFORMATION_STRING,
-  SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING
+  uploadVideoToCloudinary
 } from '../utils/cloudinaryUtils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
@@ -1455,47 +1452,11 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       res.status(404).json({ error: 'Message not found' });
       return;
     }
-    const imageUrl = rows[0].imageurl;
-    const extracted = extractPublicIdAndResourceType(imageUrl);
-    if (!extracted) {
-      res.status(400).json({ error: 'Invalid Cloudinary URL' });
-      return;
-    }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] Message manual review request:', {
-        id,
-        public_id: extracted.public_id,
-        resource_type: extracted.resource_type
-      });
-    }
-
-    const explicitOptions = {
-      type: 'upload',
-      resource_type: extracted.resource_type || 'image',
-      moderation: 'manual',
-      moderation_async: true,
-      eager_async: true,
-      eager: [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }],
-      invalidate: true
-    };
-    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
-      (explicitOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
-    }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] explicit options:', explicitOptions);
-      console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
-        public_id: extracted.public_id,
-        ...explicitOptions
-      }));
-    }
-    const manualResult = await explicitWithRetry(extracted.public_id, explicitOptions);
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] explicit response:', JSON.stringify(manualResult));
-    }
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] Message manual review submitted.');
+      console.log('[ManualReview] Message manual review request:', { id, imageUrl: rows[0].imageurl });
     }
+
     await query('UPDATE messages SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
     res.status(200).json({ success: true });
     return;
@@ -1514,50 +1475,11 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       res.status(404).json({ error: 'Reaction not found' });
       return;
     }
-    const videoUrl = rows[0].videourl;
-    const extracted = extractPublicIdAndResourceType(videoUrl);
-    if (!extracted) {
-      res.status(400).json({ error: 'Invalid Cloudinary URL' });
-      return;
-    }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] Reaction manual review request:', {
-        id,
-        public_id: extracted.public_id,
-        resource_type: extracted.resource_type
-      });
-    }
-
-    const explicitVideoOptions = {
-      type: 'upload',
-      resource_type: extracted.resource_type || 'video',
-      moderation: 'manual',
-      moderation_async: true,
-      eager_async: true,
-      eager: [
-        { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING },
-        { format: 'jpg', crop: 'thumb', width: 200, height: 150, start_offset: '0', quality: 'auto' }
-      ],
-      invalidate: true
-    };
-    if (process.env.CLOUDINARY_NOTIFICATION_URL) {
-      (explicitVideoOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
-    }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] explicit video options:', explicitVideoOptions);
-      console.log('[CloudinaryRequest] POST /explicit', JSON.stringify({
-        public_id: extracted.public_id,
-        ...explicitVideoOptions
-      }));
-    }
-    const manualResult = await explicitWithRetry(extracted.public_id, explicitVideoOptions);
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] explicit response:', JSON.stringify(manualResult));
-    }
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('[ManualReview] Reaction manual review submitted.');
+      console.log('[ManualReview] Reaction manual review request:', { id, videoUrl: rows[0].videourl });
     }
+
     await query('UPDATE reactions SET moderation_status = $1 WHERE id = $2', ['manual_review', id]);
     res.status(200).json({ success: true });
     return;

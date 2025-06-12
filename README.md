@@ -203,10 +203,9 @@ in the new `moderation_status` and `moderation_details` columns on the
 `rejected` and can be submitted for manual review via the
 `/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
 When moderation is turned off for a user, the stored status is `not_required`.
-These endpoints re-submit the asset to Cloudinary with `moderation: manual` and
-request the same eager transformations used during upload. If Cloudinary reports
-that the asset cannot be found or returns a general error, the server
-automatically retries once after a short delay.
+These endpoints now simply mark the record as `manual_review` without
+re-submitting the asset to Cloudinary. Moderators can override the rejection
+directly from the AWS Rekognition tab in the Cloudinary console.
 If a webhook is configured in Cloudinary, the final decision will be posted back
 to the backend. When a moderation decision is returned with status `approved`,
 the webhook handler calls Cloudinary's `explicit` API to generate the overlay
