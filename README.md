@@ -194,7 +194,8 @@ A brief overview of key directories within the `src/` folder:
 ## Moderation Workflow
 
 Image and video uploads can be automatically checked for inappropriate content.
-Users may enable or disable moderation from the frontend. When enabled, uploads
+Users may enable or disable moderation from the frontend. Guest accounts start
+with both image and video moderation enabled by default. When enabled, uploads
 are scanned using Cloudinary's AWS Rekognition add-on (`aws_rek` for images and
 `aws_rek_video` for videos) and the results are stored
 in the new `moderation_status` and `moderation_details` columns on the

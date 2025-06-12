@@ -66,8 +66,8 @@ passport.use(new GoogleStrategy(
           0,    // current_reactions_this_month
           3,    // max_reactions_per_message
           '2999-01-19T00:00:00Z', // last_usage_reset_date
-          false, // moderate_images default
-          false  // moderate_videos default
+          true, // moderate_images default for guests
+          true  // moderate_videos default for guests
         ]
       );
 
