@@ -1486,7 +1486,10 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
         ...explicitOptions
       }));
     }
-    await explicitWithRetry(extracted.public_id, explicitOptions);
+    const manualResult = await explicitWithRetry(extracted.public_id, explicitOptions);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] explicit response:', JSON.stringify(manualResult));
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Message manual review submitted.');
@@ -1544,7 +1547,10 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
         ...explicitVideoOptions
       }));
     }
-    await explicitWithRetry(extracted.public_id, explicitVideoOptions);
+    const manualResult = await explicitWithRetry(extracted.public_id, explicitVideoOptions);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ManualReview] explicit response:', JSON.stringify(manualResult));
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Reaction manual review submitted.');

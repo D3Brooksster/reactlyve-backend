@@ -223,6 +223,8 @@ When running in development mode, both upload requests and incoming webhook
 payloads are printed to the console so you can verify Cloudinary is attempting
 to reach the backend. The logged upload output now includes the complete POST
 body sent to Cloudinary for easier debugging of moderation settings.
+The webhook handler also logs the response from Cloudinary's `explicit` API,
+so you can confirm derived assets were generated.
 
 Database changes required for these features are located in the
 `migrations` folder and include additional moderation columns and indexes.

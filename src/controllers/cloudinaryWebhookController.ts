@@ -12,7 +12,11 @@ const explicitWithRetry = async (
   retries = 1
 ) => {
   try {
-    return await cloudinary.uploader.explicit(publicId, options);
+    const result = await cloudinary.uploader.explicit(publicId, options);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[explicitWithRetry] result:', JSON.stringify(result));
+    }
+    return result;
   } catch (err: any) {
     if (
       err &&
@@ -64,6 +68,12 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
         'reactions:',
         reactUpdate.rowCount
       );
+      if ((msgUpdate.rowCount ?? 0) === 0 && (reactUpdate.rowCount ?? 0) === 0) {
+        console.warn(
+          '[CloudinaryWebhook] no database rows matched for public_id',
+          public_id
+        );
+      }
     }
 
     if (moderation_status === 'approved') {
@@ -106,7 +116,10 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
       }
 
       try {
-        await explicitWithRetry(public_id, explicitOpts);
+        const explicitResult = await explicitWithRetry(public_id, explicitOpts);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[CloudinaryWebhook] explicit result:', JSON.stringify(explicitResult));
+        }
       } catch (genErr) {
         console.error('[CloudinaryWebhook] failed to generate derivatives:', genErr);
       }
