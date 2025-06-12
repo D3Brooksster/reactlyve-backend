@@ -154,10 +154,31 @@ The API provides several route groups for different functionalities:
     *   Removing users.
 *   Setting user message/reaction limits and moderation preferences.
 *   Retrieving detailed user information, including moderation settings.
-*   Getting pending moderation counts for all users. The response includes
-    `messages_pending`, `reactions_pending`, and `pending_manual_reviews`
-    (the sum of the two) for each user.
+*   Getting pending moderation counts for all users via `GET /api/admin/moderation/pending-counts`.
+    The response for each user contains `messages_pending`, `reactions_pending`,
+    and `pending_manual_reviews` (the sum of the two). Example:
+
+    ```json
+    [
+      {
+        "id": "<user-id>",
+        "email": "user@example.com",
+        "name": "Jane",
+        "messages_pending": 1,
+        "reactions_pending": 0,
+        "pending_manual_reviews": 1
+      }
+    ]
+    ```
 *   Fetching Cloudinary IDs of items awaiting manual review for a specific user.
+    Use `GET /api/admin/users/:userId/pending-moderation`, which returns:
+
+    ```json
+    {
+      "messages": [ { "id": "<uuid>", "publicId": "messages/abc123" } ],
+      "reactions": [ { "id": "<uuid>", "publicId": "reactions/def456" } ]
+    }
+    ```
 *   **`/api/webhooks`**: Endpoints for third-party callbacks, currently handling Cloudinary moderation results.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.
