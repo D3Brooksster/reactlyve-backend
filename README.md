@@ -201,6 +201,7 @@ in the new `moderation_status` and `moderation_details` columns on the
 `messages` and `reactions` tables. Assets that are flagged are marked as
 `rejected` and can be submitted for manual review via the
 `/messages/:id/manual-review` or `/reactions/:id/manual-review` endpoints.
+When moderation is turned off for a user, the stored status is `not_required`.
 These endpoints re-submit the asset to Cloudinary with `moderation: manual`.
 If a webhook is configured in Cloudinary, the final decision will be posted back
 to the backend so the status updates automatically.

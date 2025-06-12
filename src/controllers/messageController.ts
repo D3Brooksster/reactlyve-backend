@@ -161,7 +161,7 @@ export const sendMessage = (req: Request, res: Response) => {
 
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
-      let moderationStatus = 'approved';
+      let moderationStatus = 'not_required';
       let moderationDetails: string | null = null;
       let originalUrl: string | null = null;
 
@@ -847,7 +847,7 @@ export const recordReaction = async (req: Request, res: Response): Promise<void>
       console.log(`[RecordReactionLog] Video uploaded. URL: ${actualVideoUrl}, Thumbnail: ${actualThumbnailUrl}, Duration: ${durationInSeconds}s`);
     }
 
-    let moderationStatus = 'approved';
+    let moderationStatus = 'not_required';
     let moderationDetails: string | null = null;
     let originalVideoUrl = actualVideoUrl;
     if (moderateVideos) {
@@ -1323,7 +1323,7 @@ export const uploadReactionVideo = async (req: Request, res: Response): Promise<
     );
     const duration = videoDuration !== null ? Math.round(videoDuration) : 0; // Use dynamic duration, default to 0 if null
 
-    let moderationStatus = 'approved';
+    let moderationStatus = 'not_required';
     let moderationDetails: string | null = null;
     let originalVideoUrl = actualVideoUrl;
 
