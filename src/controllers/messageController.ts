@@ -7,7 +7,14 @@ import { query } from '../config/database.config';
 import crypto from 'crypto';
 import "dotenv/config";
 import { AppUser } from '../entity/User'; // Changed User to AppUser
-import { deleteFromCloudinary, uploadToCloudinarymedia, uploadVideoToCloudinary, extractPublicIdAndResourceType } from '../utils/cloudinaryUtils';
+import {
+  deleteFromCloudinary,
+  uploadToCloudinarymedia,
+  uploadVideoToCloudinary,
+  extractPublicIdAndResourceType,
+  IMAGE_OVERLAY_TRANSFORMATION_STRING,
+  SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING
+} from '../utils/cloudinaryUtils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
@@ -65,6 +72,25 @@ const uploadVideoToCloudinaryWithRetry = async (
       return await uploadVideoToCloudinary(buffer, size, folder, options);
     }
     console.error('[uploadVideoToCloudinaryWithRetry] Upload failed:', err);
+    throw err;
+  }
+};
+
+const explicitWithRetry = async (
+  publicId: string,
+  options: Record<string, any>,
+  retries = 1
+) => {
+  try {
+    return await cloudinary.uploader.explicit(publicId, options);
+  } catch (err: any) {
+    if (err && err.http_code === 404 && retries > 0) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[explicitWithRetry] Resource not found, retrying...');
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return explicitWithRetry(publicId, options, retries - 1);
+    }
     throw err;
   }
 };
@@ -1440,7 +1466,9 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
       type: 'upload',
       resource_type: extracted.resource_type || 'image',
       moderation: 'manual',
-      moderation_async: true
+      moderation_async: true,
+      eager_async: true,
+      eager: [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }]
     };
     if (process.env.CLOUDINARY_NOTIFICATION_URL) {
       (explicitOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
@@ -1452,7 +1480,7 @@ export const submitMessageForManualReview = async (req: Request, res: Response):
         ...explicitOptions
       }));
     }
-    await cloudinary.uploader.explicit(extracted.public_id, explicitOptions);
+    await explicitWithRetry(extracted.public_id, explicitOptions);
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Message manual review submitted.');
@@ -1493,7 +1521,12 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
       type: 'upload',
       resource_type: extracted.resource_type || 'video',
       moderation: 'manual',
-      moderation_async: true
+      moderation_async: true,
+      eager_async: true,
+      eager: [
+        { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING },
+        { format: 'jpg', crop: 'thumb', width: 200, height: 150, start_offset: '0', quality: 'auto' }
+      ]
     };
     if (process.env.CLOUDINARY_NOTIFICATION_URL) {
       (explicitVideoOptions as any).notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
@@ -1505,7 +1538,7 @@ export const submitReactionForManualReview = async (req: Request, res: Response)
         ...explicitVideoOptions
       }));
     }
-    await cloudinary.uploader.explicit(extracted.public_id, explicitVideoOptions);
+    await explicitWithRetry(extracted.public_id, explicitVideoOptions);
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[ManualReview] Reaction manual review submitted.');
