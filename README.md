@@ -154,8 +154,10 @@ The API provides several route groups for different functionalities:
     *   Removing users.
 *   Setting user message/reaction limits and moderation preferences.
 *   Retrieving detailed user information, including moderation settings.
-    *   Getting pending moderation counts for all users.
-    *   Fetching Cloudinary IDs of items awaiting manual review for a specific user.
+*   Getting pending moderation counts for all users. The response includes
+    `messages_pending`, `reactions_pending`, and `pending_manual_reviews`
+    (the sum of the two) for each user.
+*   Fetching Cloudinary IDs of items awaiting manual review for a specific user.
 *   **`/api/webhooks`**: Endpoints for third-party callbacks, currently handling Cloudinary moderation results.
 
 For detailed information on specific endpoints, request/response formats, and parameters, please refer to the route definitions in `src/routes/` and the corresponding controller logic in `src/controllers/`.

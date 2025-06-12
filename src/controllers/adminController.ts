@@ -380,13 +380,26 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
 export const getModerationSummary = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rows } = await query(
-      `SELECT u.id, u.email, u.name,
-              COUNT(m.*) FILTER (WHERE m.moderation_status = 'manual_review') AS messages_pending,
-              COUNT(r.*) FILTER (WHERE r.moderation_status = 'manual_review') AS reactions_pending
+      `SELECT u.id,
+              u.email,
+              u.name,
+              COALESCE(m.msg_count, 0) AS messages_pending,
+              COALESCE(r.react_count, 0) AS reactions_pending,
+              COALESCE(m.msg_count, 0) + COALESCE(r.react_count, 0) AS pending_manual_reviews
        FROM users u
-       LEFT JOIN messages m ON m.senderid = u.id
-       LEFT JOIN reactions r ON r.messageid = m.id
-       GROUP BY u.id
+       LEFT JOIN (
+         SELECT senderid AS user_id, COUNT(*) AS msg_count
+         FROM messages
+         WHERE moderation_status = 'manual_review'
+         GROUP BY senderid
+       ) m ON m.user_id = u.id
+       LEFT JOIN (
+         SELECT m.senderid AS user_id, COUNT(*) AS react_count
+         FROM reactions r
+         JOIN messages m ON r.messageid = m.id
+         WHERE r.moderation_status = 'manual_review'
+         GROUP BY m.senderid
+       ) r ON r.user_id = u.id
        ORDER BY u.created_at DESC`
     );
     res.json(rows);
@@ -402,13 +415,14 @@ export const getUserPendingModeration = async (req: Request, res: Response): Pro
   const { userId } = req.params;
   try {
     const { rows: msgRows } = await query(
-      `SELECT id, original_imageurl FROM messages
+      `SELECT id, COALESCE(original_imageurl, imageurl) AS url
+       FROM messages
        WHERE senderid = $1 AND moderation_status = 'manual_review'`,
       [userId]
     );
 
     const { rows: reactionRows } = await query(
-      `SELECT r.id, r.original_videourl
+      `SELECT r.id, COALESCE(r.original_videourl, r.videourl) AS url
        FROM reactions r
        JOIN messages m ON r.messageid = m.id
        WHERE m.senderid = $1 AND r.moderation_status = 'manual_review'`,
@@ -421,8 +435,8 @@ export const getUserPendingModeration = async (req: Request, res: Response): Pro
       return extracted ? extracted.public_id : null;
     };
 
-    const messages = msgRows.map(row => ({ id: row.id, publicId: toPublicId(row.original_imageurl) }));
-    const reactions = reactionRows.map(row => ({ id: row.id, publicId: toPublicId(row.original_videourl) }));
+    const messages = msgRows.map(row => ({ id: row.id, publicId: toPublicId(row.url) }));
+    const reactions = reactionRows.map(row => ({ id: row.id, publicId: toPublicId(row.url) }));
 
     res.json({ messages, reactions });
     return;
