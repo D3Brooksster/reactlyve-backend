@@ -205,8 +205,8 @@ in the new `moderation_status` and `moderation_details` columns on the
 When moderation is turned off for a user, the stored status is `not_required`.
 These endpoints re-submit the asset to Cloudinary with `moderation: manual` and
 request the same eager transformations used during upload. If Cloudinary reports
-that the asset cannot be found, the server automatically retries once after a
-short delay.
+that the asset cannot be found or returns a general error, the server
+automatically retries once after a short delay.
 If a webhook is configured in Cloudinary, the final decision will be posted back
 to the backend so the status updates automatically and derived assets are
 generated after approval.

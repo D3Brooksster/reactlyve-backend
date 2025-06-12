@@ -84,9 +84,15 @@ const explicitWithRetry = async (
   try {
     return await cloudinary.uploader.explicit(publicId, options);
   } catch (err: any) {
-    if (err && err.http_code === 404 && retries > 0) {
+    if (
+      err &&
+      (err.http_code === 404 || err.http_code >= 500) &&
+      retries > 0
+    ) {
       if (process.env.NODE_ENV === 'development') {
-        console.warn('[explicitWithRetry] Resource not found, retrying...');
+        console.warn(
+          `[explicitWithRetry] ${err.message || 'Error'} (code ${err.http_code}), retrying...`
+        );
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
       return explicitWithRetry(publicId, options, retries - 1);
