@@ -203,6 +203,8 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[setUserLimits] incoming body for user %s:', userId, req.body);
+  } else {
+    console.log('[setUserLimits] request for user %s', userId);
   }
 
   // Basic validation
@@ -290,7 +292,10 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
       console.log('[setUserLimits] query:', updateUserQuery, 'params:', values);
     }
 
-    const { rows } = await query(updateUserQuery, values);
+    const { rows, rowCount } = await query(updateUserQuery, values);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[setUserLimits] affected rows:', rowCount);
+    }
     if (rows.length === 0) {
       res.status(404).json({ error: 'User not found or update failed.' });
       return;

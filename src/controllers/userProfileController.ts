@@ -230,7 +230,10 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
       console.log('[updateMyProfile] query:', updateQuery, 'params:', params);
     }
 
-    const { rows: updatedUsers } = await query(updateQuery, params);
+    const { rows: updatedUsers, rowCount } = await query(updateQuery, params);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[updateMyProfile] affected rows:', rowCount);
+    }
 
     if (updatedUsers.length === 0) {
       // This case should ideally not happen if req.user.id is valid and comes from an authenticated session
