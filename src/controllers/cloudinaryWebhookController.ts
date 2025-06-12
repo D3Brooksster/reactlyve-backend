@@ -123,6 +123,33 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
         if (process.env.NODE_ENV === 'development') {
           console.log('[CloudinaryWebhook] explicit result:', JSON.stringify(explicitResult));
         }
+
+        if (explicitResult && Array.isArray(explicitResult.eager) && explicitResult.eager.length > 0) {
+          const overlayUrl = explicitResult.eager[0].secure_url as string | undefined;
+          const thumbnailUrl = explicitResult.eager.length > 1 ? (explicitResult.eager[1].secure_url as string | undefined) : undefined;
+
+          if (overlayUrl && (msgUpdate.rowCount ?? 0) > 0) {
+            await query(
+              `UPDATE messages SET imageurl = $1 WHERE original_imageurl LIKE '%' || $2 || '%'`,
+              [overlayUrl, public_id]
+            );
+          }
+
+          if (overlayUrl && (reactUpdate.rowCount ?? 0) > 0) {
+            const updateFields = ['videourl = $1'];
+            const params: any[] = [overlayUrl];
+            let paramIdx = 2;
+            if (thumbnailUrl) {
+              updateFields.push(`thumbnailurl = $${paramIdx++}`);
+              params.push(thumbnailUrl);
+            }
+            params.push(public_id);
+            await query(
+              `UPDATE reactions SET ${updateFields.join(', ')} WHERE original_videourl LIKE '%' || $${paramIdx} || '%'`,
+              params
+            );
+          }
+        }
       } catch (genErr) {
         console.error('[CloudinaryWebhook] failed to generate derivatives:', genErr);
       }
