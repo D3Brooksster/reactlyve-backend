@@ -1,5 +1,35 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database.config';
+import { v2 as cloudinary } from 'cloudinary';
+import {
+  SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING,
+  IMAGE_OVERLAY_TRANSFORMATION_STRING
+} from '../utils/cloudinaryUtils';
+
+const explicitWithRetry = async (
+  publicId: string,
+  options: Record<string, any>,
+  retries = 1
+) => {
+  try {
+    return await cloudinary.uploader.explicit(publicId, options);
+  } catch (err: any) {
+    if (
+      err &&
+      (err.http_code === 404 || err.http_code >= 500) &&
+      retries > 0
+    ) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          `[explicitWithRetry] ${err.message || 'Error'} (code ${err.http_code}), retrying...`
+        );
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return explicitWithRetry(publicId, options, retries - 1);
+    }
+    throw err;
+  }
+};
 
 export const handleCloudinaryModeration = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -28,8 +58,58 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
     );
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('[CloudinaryWebhook] updated messages:', msgUpdate.rowCount,
-                  'reactions:', reactUpdate.rowCount);
+      console.log(
+        '[CloudinaryWebhook] updated messages:',
+        msgUpdate.rowCount,
+        'reactions:',
+        reactUpdate.rowCount
+      );
+    }
+
+    if (moderation_status === 'approved') {
+      let resourceType = req.body.resource_type as string | undefined;
+
+      if (!resourceType && msgUpdate.rowCount > 0) {
+        const mtRes = await query(
+          `SELECT mediatype FROM messages WHERE original_imageurl LIKE '%' || $1 || '%' LIMIT 1`,
+          [public_id]
+        );
+        if (mtRes.rows.length) {
+          resourceType = mtRes.rows[0].mediatype === 'video' ? 'video' : 'image';
+        }
+      } else if (!resourceType && reactUpdate.rowCount > 0) {
+        resourceType = 'video';
+      }
+
+      const explicitOpts: any = {
+        type: 'upload',
+        resource_type: resourceType || 'image',
+        eager_async: true,
+        eager:
+          resourceType === 'video'
+            ? [
+                { raw_transformation: SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING },
+                { format: 'jpg', crop: 'thumb', width: 200, height: 150, start_offset: '0', quality: 'auto' }
+              ]
+            : [{ raw_transformation: IMAGE_OVERLAY_TRANSFORMATION_STRING }]
+      };
+
+      if (process.env.CLOUDINARY_NOTIFICATION_URL) {
+        explicitOpts.notification_url = process.env.CLOUDINARY_NOTIFICATION_URL;
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[CloudinaryWebhook] generating derived assets:', {
+          public_id,
+          explicitOpts
+        });
+      }
+
+      try {
+        await explicitWithRetry(public_id, explicitOpts);
+      } catch (genErr) {
+        console.error('[CloudinaryWebhook] failed to generate derivatives:', genErr);
+      }
     }
 
     res.status(200).json({ received: true });
