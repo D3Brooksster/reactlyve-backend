@@ -69,7 +69,7 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
     if (moderation_status === 'approved') {
       let resourceType = req.body.resource_type as string | undefined;
 
-      if (!resourceType && msgUpdate.rowCount > 0) {
+      if (!resourceType && (msgUpdate.rowCount ?? 0) > 0) {
         const mtRes = await query(
           `SELECT mediatype FROM messages WHERE original_imageurl LIKE '%' || $1 || '%' LIMIT 1`,
           [public_id]
@@ -77,7 +77,7 @@ export const handleCloudinaryModeration = async (req: Request, res: Response): P
         if (mtRes.rows.length) {
           resourceType = mtRes.rows[0].mediatype === 'video' ? 'video' : 'image';
         }
-      } else if (!resourceType && reactUpdate.rowCount > 0) {
+      } else if (!resourceType && (reactUpdate.rowCount ?? 0) > 0) {
         resourceType = 'video';
       }
 
