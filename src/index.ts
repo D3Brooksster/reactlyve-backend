@@ -13,12 +13,7 @@ import webhookRoutes from './routes/webhookRoutes';
 // Import for cron job
 import cron from 'node-cron';
 import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
-
-// Silence console.log and console.warn in production
-if (process.env.NODE_ENV !== 'development') {
-  console.log = () => {};
-  console.warn = () => {};
-}
+import { log, warn } from './utils/logger';
 
 // Silence console.log and console.warn in production
 if (process.env.NODE_ENV !== 'development') {
@@ -43,9 +38,7 @@ app.use(
 app.use(passport.initialize());
 
 app.use((req, res, next) => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Incoming request:', req.method, req.originalUrl);
-  }
+  log('Incoming request:', req.method, req.originalUrl);
   next();
 });
 
@@ -57,7 +50,7 @@ pool.query('SELECT NOW()', (err, res) => {
   if (err) {
     console.error('Database connection error:', err.stack);
   } else {
-    console.log('Connected to database:', res.rows[0]);
+    log('Connected to database:', res.rows[0]);
   }
 });
 app.use('/api/auth', authRoutes);
@@ -75,24 +68,24 @@ app.get(
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const server = app.listen(PORT, async () => {
-  console.log(`Server listening on port ${PORT} in ${process.env.NODE_ENV}`);
+  log(`Server listening on port ${PORT} in ${process.env.NODE_ENV}`);
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('Cloudinary notification URL (if any):', process.env.CLOUDINARY_NOTIFICATION_URL || 'using account webhook');
+    log('Cloudinary notification URL (if any):', process.env.CLOUDINARY_NOTIFICATION_URL || 'using account webhook');
   }
 
   // Schedule the inactive account cleanup job
   cron.schedule('0 0 * * *', async () => {
-    console.log('Running scheduled job: deleteInactiveAccounts at midnight');
+    log('Running scheduled job: deleteInactiveAccounts at midnight');
     try {
       await deleteInactiveAccounts();
-      console.log('Scheduled job: deleteInactiveAccounts completed successfully.');
+      log('Scheduled job: deleteInactiveAccounts completed successfully.');
     } catch (error) {
       console.error('Scheduled job: deleteInactiveAccounts encountered an error:', error);
     }
   }, {
     timezone: "UTC" // Explicitly setting UTC, can be adjusted as needed
   });
-  console.log('Inactive account cleanup job scheduled to run daily at midnight UTC.');
+  log('Inactive account cleanup job scheduled to run daily at midnight UTC.');
 });
 server.setTimeout(300000); // 300,000 milliseconds = 5 minutes
