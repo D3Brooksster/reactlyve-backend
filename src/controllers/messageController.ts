@@ -987,7 +987,6 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
     return;
   }
 };
-
       });
       return;
     } catch (error) {
