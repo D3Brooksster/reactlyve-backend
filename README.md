@@ -15,6 +15,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
     *   Send text messages.
     *   Upload and send image and video messages (stored on Cloudinary).
     *   Shareable message links (with optional passcode protection).
+    *   Verify passcodes to unlock protected messages.
     *   Video reactions to messages.
     *   Text replies to messages/reactions.
 *   **Admin Panel:**
@@ -146,6 +147,7 @@ The API provides several route groups for different functionalities:
 *   **`/api/messages`** (and related routes for reactions/replies): Manages the messaging system.
     *   Creating, retrieving, updating, and deleting messages.
     *   Managing message reactions and replies.
+    *   Verifying message passcodes via `POST /api/messages/:id/verify-passcode`.
 *   **`/api/profile`**: User profile operations.
     *   Viewing user's own profile.
     *   Deleting user's own account.
