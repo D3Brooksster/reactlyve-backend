@@ -7,9 +7,9 @@ dotenv.config();
 
 const OVERLAY_PUBLIC_ID = process.env.CLOUDINARY_OVERLAY_PUBLIC_ID || 'Reactlyve_Logo_bi78md';
 
-// Allow overlay width to be specified as a percentage (e.g., "20" or "0.2")
-// Defaults to 0.2 (20%) if unset or invalid
-let OVERLAY_WIDTH_PERCENT = '0.2';
+// Allow overlay width to be specified as a percentage (e.g., "30" or "0.3")
+// Defaults to 0.3 (30%) if unset or invalid
+let OVERLAY_WIDTH_PERCENT = '0.3';
 if (process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT) {
   const rawValue = process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT;
   const parsed = parseFloat(rawValue);
