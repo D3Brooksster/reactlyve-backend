@@ -988,26 +988,6 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
-
-export const getReactionById = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-  
-      const { rows } = await query(
-        `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat
-         FROM reactions
-         WHERE id = $1`,
-        [id]
-      );
-  
-      if (!rows.length) {
-        res.status(404).json({ error: 'Reaction not found' });
-        return;
-      }
-  
-      const reaction = rows[0];
-      res.status(200).json({
-        ...reaction,
         createdAt: new Date(reaction.createdat).toISOString()
       });
       return;

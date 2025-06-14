@@ -9,7 +9,6 @@ import {
   updateMessage, // Added import for updateMessage
   verifyMessagePasscode,
   recordReaction,
-  deleteMessageAndReaction,
   recordTextReply,
   initReaction,         
   uploadReactionVideo,
@@ -62,7 +61,6 @@ router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactio
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
-router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
 router.delete('/messages/:messageId/reactions/delete', requireAuth, deleteAllReactionsForMessage);
