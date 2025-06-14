@@ -8,8 +8,8 @@ dotenv.config();
 const OVERLAY_PUBLIC_ID = process.env.CLOUDINARY_OVERLAY_PUBLIC_ID || 'Reactlyve_Logo_bi78md';
 
 // Allow overlay width to be specified as a percentage (e.g., "30" or "0.3")
-// Defaults to 0.3 (30%) if unset or invalid
-let OVERLAY_WIDTH_PERCENT = '0.3';
+// Defaults to 0.1 (10%) if unset or invalid
+let OVERLAY_WIDTH_PERCENT = '0.1';
 if (process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT) {
   const rawValue = process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT;
   const parsed = parseFloat(rawValue);
@@ -28,6 +28,7 @@ exports.SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = SMALL_FILE_VIDEO_OVERLA
 exports.LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
 exports.IMAGE_OVERLAY_TRANSFORMATION_STRING = IMAGE_OVERLAY_TRANSFORMATION_STRING;
 exports.OVERLAY_PUBLIC_ID = OVERLAY_PUBLIC_ID;
+exports.OVERLAY_WIDTH_PERCENT = OVERLAY_WIDTH_PERCENT;
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
