@@ -6,17 +6,29 @@ const { Readable } = require('stream');
 dotenv.config();
 
 const OVERLAY_PUBLIC_ID = process.env.CLOUDINARY_OVERLAY_PUBLIC_ID || 'Reactlyve_Logo_bi78md';
-const NEW_WORKING_OVERLAY_PARAMS = `l_${OVERLAY_PUBLIC_ID}/fl_layer_apply,w_0.3,g_south_east,x_10,y_10`;
+
+// Allow overlay width to be specified as a percentage (e.g., "30" or "0.3")
+// Defaults to 0.3 (30%) if unset or invalid
+let OVERLAY_WIDTH_PERCENT = '0.3';
+if (process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT) {
+  const rawValue = process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT;
+  const parsed = parseFloat(rawValue);
+  if (!isNaN(parsed) && parsed > 0) {
+    OVERLAY_WIDTH_PERCENT = parsed > 1 ? (parsed / 100).toString() : parsed.toString();
+  }
+}
+const NEW_WORKING_OVERLAY_PARAMS = `l_${OVERLAY_PUBLIC_ID},fl_relative,w_${OVERLAY_WIDTH_PERCENT}/fl_layer_apply,g_south_east,x_10,y_10`;
 const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `f_auto,q_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
 const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `w_1280,c_limit,q_auto,f_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
 const IMAGE_OVERLAY_TRANSFORMATION_STRING = `f_auto,q_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
-const JUST_THE_OVERLAY_TRANSFORMATION = `l_${OVERLAY_PUBLIC_ID},w_0.1,g_south_east,x_10,y_10,fl_layer_apply`; // This might be unused or deprecated after this change
+const JUST_THE_OVERLAY_TRANSFORMATION = `l_${OVERLAY_PUBLIC_ID},fl_relative,w_${OVERLAY_WIDTH_PERCENT},g_south_east,x_10,y_10,fl_layer_apply`; // This might be unused or deprecated after this change
 
 exports.NEW_WORKING_OVERLAY_PARAMS = NEW_WORKING_OVERLAY_PARAMS;
 exports.SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
 exports.LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING;
 exports.IMAGE_OVERLAY_TRANSFORMATION_STRING = IMAGE_OVERLAY_TRANSFORMATION_STRING;
 exports.OVERLAY_PUBLIC_ID = OVERLAY_PUBLIC_ID;
+exports.OVERLAY_WIDTH_PERCENT = OVERLAY_WIDTH_PERCENT;
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,

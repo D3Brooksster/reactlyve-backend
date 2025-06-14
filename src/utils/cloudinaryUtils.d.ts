@@ -28,3 +28,8 @@ export declare const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING: string;
 export declare const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING: string;
 export declare const IMAGE_OVERLAY_TRANSFORMATION_STRING: string;
 export declare const OVERLAY_PUBLIC_ID: string;
+/**
+ * Overlay width as a fraction of the base asset's width. Derived from the
+ * `CLOUDINARY_OVERLAY_WIDTH_PERCENT` environment variable. Defaults to `0.3`.
+ */
+export declare const OVERLAY_WIDTH_PERCENT: string;
