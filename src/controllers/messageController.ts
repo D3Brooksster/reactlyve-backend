@@ -988,26 +988,6 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const skipReaction = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
-
-    if (!rows.length) {
-      res.status(404).json({ error: 'Message not found' });
-      return;
-    }
-
-    res.status(200).json({ success: true, message: 'Reaction skipped' });
-    return;
-
-  } catch (error) {
-    console.error('Error skipping reaction:', error);
-    res.status(500).json({ error: 'Failed to skip reaction' });
-    return;
-  }
-};
 
 export const getReactionById = async (req: Request, res: Response): Promise<void> => {
     try {
