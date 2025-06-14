@@ -27,3 +27,4 @@ export declare const NEW_WORKING_OVERLAY_PARAMS: string;
 export declare const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING: string;
 export declare const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING: string;
 export declare const IMAGE_OVERLAY_TRANSFORMATION_STRING: string;
+export declare const OVERLAY_PUBLIC_ID: string;

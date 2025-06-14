@@ -112,6 +112,7 @@ GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback # Adjust if y
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+CLOUDINARY_OVERLAY_PUBLIC_ID=Reactlyve_Logo_bi78md
 
 # Notification URL for Cloudinary to POST moderation results
 # This value is included with each upload and manual review request so
@@ -234,7 +235,9 @@ directly from the AWS Rekognition tab in the Cloudinary console.
 If a webhook is configured in Cloudinary, the final decision will be posted back
 to the backend. When a moderation decision is returned with status `approved`,
 the webhook handler calls Cloudinary's `explicit` API to generate the overlay
-and thumbnail derivatives so they appear alongside the original asset.
+and thumbnail derivatives so they appear alongside the original asset. The
+overlay image used can be customized via the `CLOUDINARY_OVERLAY_PUBLIC_ID`
+environment variable.
 To avoid race conditions where Cloudinary reports the asset too soon,
 the server now retries the `explicit` request several times with a short
 delay. Rejected assets will not have derivatives until they are manually
