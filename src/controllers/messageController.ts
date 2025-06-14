@@ -988,7 +988,6 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
-        createdAt: new Date(reaction.createdat).toISOString()
       });
       return;
     } catch (error) {
