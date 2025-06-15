@@ -9,6 +9,7 @@ import {
   updateMessage, // Added import for updateMessage
   verifyMessagePasscode,
   recordReaction,
+  skipReaction,
   deleteMessageAndReaction,
   recordTextReply,
   initReaction,         
@@ -18,10 +19,7 @@ import {
   deleteReactionById,
   deleteAllReactionsForMessage,
   submitMessageForManualReview,
-  submitReactionForManualReview,
-  createMessageLink,
-  getMessageLinks,
-  deleteMessageLink
+  submitReactionForManualReview
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
@@ -60,14 +58,12 @@ router.get('/messages/:id', getMessageById);
 router.put('/messages/:id', requireAuth, updateMessage); // Added PUT route for updating messages
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
-router.post('/messages/:id/links', requireAuth, createMessageLink);
-router.get('/messages/:id/links', requireAuth, getMessageLinks);
-router.delete('/messages/links/:linkId', requireAuth, deleteMessageLink);
 router.post('/reactions/init/:messageId', initReaction);
 router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
+router.post('/reactions/:id/skip', skipReaction);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
