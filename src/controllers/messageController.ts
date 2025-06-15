@@ -45,10 +45,10 @@ const uploadToCloudinary = (buffer: Buffer): Promise<string> => {
   });
 };
 
-const generateShareableLink = (): { link: string; id: string } => {
+const generateShareableLink = (): string => {
   const baseUrl = process.env.FRONTEND_URL || '';
   const uniqueId = crypto.randomBytes(8).toString('hex');
-  return { link: `${baseUrl}/m/${uniqueId}`, id: uniqueId };
+  return `${baseUrl}/m/${uniqueId}`;
 };
 
 const uploadVideoToCloudinaryWithRetry = async (
@@ -259,8 +259,7 @@ export const sendMessage = (req: Request, res: Response) => {
         }
       }
 
-      const onetime = req.body.onetime === 'true' || req.body.onetime === true;
-      const { link: shareableLink, id: linkId } = generateShareableLink();
+      const shareableLink = generateShareableLink();
       const mediaSize = req.file ? req.file.size : null;
 
       const { rows } = await query(
@@ -270,13 +269,6 @@ export const sendMessage = (req: Request, res: Response) => {
       );
 
       const message = rows[0];
-
-      // create entry in message_links table
-      await query(
-        `INSERT INTO message_links (message_id, link_id, passcode, onetime)
-         VALUES ($1, $2, $3, $4)`,
-        [message.id, linkId, passcode || null, onetime]
-      );
 
       if (process.env.NODE_ENV === 'development') {
         console.log(`[Moderation] Message ${message.id} stored with status ${moderationStatus}`);
@@ -308,7 +300,6 @@ export const sendMessage = (req: Request, res: Response) => {
         mediaType: message.mediatype,
         mediaSize: message.media_size,
         shareableLink: message.shareablelink,
-        onetime,
         reactionLength: message.reaction_length,
         maxReactionsAllowed: message.max_reactions_allowed, // Include new field in response
         createdAt: new Date(message.createdat).toISOString(),
@@ -575,14 +566,9 @@ export const updateMessage = async (req: Request, res: Response): Promise<void> 
     queryParams.push(id, user.id);
 
     // Execute update query
-    const updateRes = await query(updateQuery, queryParams);
-    const updatedRows = updateRes.rows;
+    const { rows: updatedRows, rowCount } = await query(updateQuery, queryParams);
 
-    if (updatedRows.length > 0 && passcode !== undefined) {
-      await query('UPDATE message_links SET passcode = $1 WHERE message_id = $2', [passcode === null ? null : passcode, id]);
-    }
-
-    if (updatedRows.length === 0) {
+    if (rowCount === 0) {
       // This could happen if the senderid condition fails despite earlier checks (e.g., race condition or if the message was deleted)
       // Or if the ID itself was not found in this atomic operation.
       res.status(404).json({ error: 'Message not found or update failed due to ownership mismatch.' });
@@ -611,96 +597,6 @@ export const updateMessage = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Failed to update message' });
     return;
   }
-};
-
-export const createMessageLink = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const onetime = req.body.onetime === 'true' || req.body.onetime === true;
-
-  if (!req.user) {
-    res.status(401).json({ error: 'Authentication required to create links.' });
-    return;
-  }
-
-  const user = req.user as AppUser;
-
-  const { rows: messageRows } = await query('SELECT * FROM messages WHERE id = $1', [id]);
-  if (!messageRows.length) {
-    res.status(404).json({ error: 'Message not found' });
-    return;
-  }
-  const message = messageRows[0];
-  if (message.senderid !== user.id) {
-    res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-
-  const { link, id: linkId } = generateShareableLink();
-
-  await query(
-    `INSERT INTO message_links (message_id, link_id, passcode, onetime)
-     VALUES ($1, $2, $3, $4)`,
-    [message.id, linkId, message.passcode, onetime]
-  );
-
-  res.status(201).json({ id: linkId, link, onetime });
-};
-
-export const getMessageLinks = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  if (!req.user) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-  const user = req.user as AppUser;
-  const { rows: msgRows } = await query('SELECT senderid FROM messages WHERE id = $1', [id]);
-  if (!msgRows.length) {
-    res.status(404).json({ error: 'Message not found' });
-    return;
-  }
-  if (msgRows[0].senderid !== user.id) {
-    res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-  const { rows } = await query(
-    'SELECT link_id, onetime, viewed, created_at, updated_at FROM message_links WHERE message_id = $1 ORDER BY created_at ASC',
-    [id]
-  );
-  const liveOneTime = rows.filter(r => r.onetime && !r.viewed).length;
-  const expiredOneTime = rows.filter(r => r.onetime && r.viewed).length;
-  res.status(200).json({
-    links: rows.map(r => ({
-      id: r.link_id,
-      onetime: r.onetime,
-      viewed: r.viewed,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
-    })),
-    stats: { liveOneTime, expiredOneTime }
-  });
-};
-
-export const deleteMessageLink = async (req: Request, res: Response): Promise<void> => {
-  const { linkId } = req.params;
-  if (!req.user) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-  const user = req.user as AppUser;
-  const { rows } = await query(
-    'SELECT ml.message_id, m.senderid FROM message_links ml JOIN messages m ON ml.message_id = m.id WHERE ml.link_id = $1',
-    [linkId]
-  );
-  if (!rows.length) {
-    res.status(404).json({ error: 'Link not found' });
-    return;
-  }
-  if (rows[0].senderid !== user.id) {
-    res.status(403).json({ error: 'Forbidden' });
-    return;
-  }
-  await query('DELETE FROM message_links WHERE link_id = $1', [linkId]);
-  res.status(200).json({ success: true });
 };
 
 export const deleteAllReactionsForMessage = async (req: Request, res: Response): Promise<void> => {
@@ -832,35 +728,22 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
 export const getMessageByShareableLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { linkId } = req.params;
-    const { rows } = await query(
-      `SELECT m.*, ml.onetime, ml.viewed, ml.passcode
-       FROM message_links ml
-       JOIN messages m ON ml.message_id = m.id
-       WHERE ml.link_id = $1`,
-      [linkId]
-    );
+    const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
 
-    let message = rows[0];
-    if (!message) {
-      const shareableLink = `${process.env.FRONTEND_URL}/m/${linkId}`;
-      const legacy = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
-      if (!legacy.rows.length) {
-        res.status(404).json({ error: 'Message not found' });
-        return;
-      }
-      message = legacy.rows[0];
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
-    const linkViewed = message.viewed || false;
+    const message = rows[0];
     const hasPasscode = !!message.passcode;
 
     if (hasPasscode) {
       res.status(200).json({
         id: message.id,
         hasPasscode: true,
-        onetime: message.onetime || false,
-        linkViewed,
-        reaction_length: message.reaction_length,
+        reaction_length: message.reaction_length, // Add reaction_length
         createdAt: new Date(message.createdat).toISOString()
       });
       return;
@@ -871,9 +754,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       content: message.content,
       imageUrl: message.imageurl,
       hasPasscode: false,
-      onetime: message.onetime || false,
-      linkViewed,
-      reaction_length: message.reaction_length,
+      reaction_length: message.reaction_length, // Add reaction_length
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString()
     });
@@ -891,26 +772,15 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
     const { id } = req.params;
     const { passcode } = req.body;
 
-    const { rows } = await query(
-      `SELECT m.*, ml.id as link_id, ml.onetime, ml.viewed
-       FROM message_links ml
-       JOIN messages m ON ml.message_id = m.id
-       WHERE ml.link_id = $1`,
-      [id]
-    );
+    const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
 
-    let message = rows[0];
-    if (!message) {
-      const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
-      const legacy = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
-      if (!legacy.rows.length) {
-        res.status(404).json({ error: 'Message not found' });
-        return;
-      }
-      message = legacy.rows[0];
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
-    const linkViewed = message.viewed || false;
+    const message = rows[0];
 
     if (message.passcode !== passcode) {
       res.status(403).json({ error: 'Invalid passcode', verified: false });
@@ -929,8 +799,6 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         content: message.content,
         imageUrl: message.imageurl,
         hasPasscode: true,
-        onetime: message.onetime || false,
-        linkViewed,
         passcodeVerified: true,
         mediaSize: message.media_size,
         createdAt: new Date(message.createdat).toISOString()
@@ -1120,6 +988,26 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
+export const skipReaction = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const shareableLink = `${process.env.FRONTEND_URL}/m/${id}`;
+    const { rows } = await query('SELECT * FROM messages WHERE shareablelink = $1', [shareableLink]);
+
+    if (!rows.length) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+
+    res.status(200).json({ success: true, message: 'Reaction skipped' });
+    return;
+
+  } catch (error) {
+    console.error('Error skipping reaction:', error);
+    res.status(500).json({ error: 'Failed to skip reaction' });
+    return;
+  }
+};
 
 export const getReactionById = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -1236,7 +1124,7 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
 
 export const initReaction = async (req: Request, res: Response): Promise<void> => {
   const { messageId } = req.params; // This is actual_message_id
-  const { sessionid, name, linkId } = req.body;
+  const { sessionid, name } = req.body;
 
   console.log("[InitReactionLog] Entering function. messageId:", messageId, "sessionid:", sessionid);
 
@@ -1269,23 +1157,6 @@ export const initReaction = async (req: Request, res: Response): Promise<void> =
     // actualMessageId is messageId from params
     const messageSenderId = messageDetails.senderid;
     console.log("[InitReactionLog] Fetched messageDetails:", { id: messageId, senderid: messageSenderId, max_reactions_allowed: messageDetails.max_reactions_allowed });
-
-    // If a linkId was provided, verify it and mark viewed if onetime
-    if (linkId) {
-      const linkRes = await query('SELECT onetime, viewed FROM message_links WHERE link_id = $1 AND message_id = $2', [linkId, messageId]);
-      if (!linkRes.rows.length) {
-        res.status(404).json({ error: 'Link not found' });
-        return;
-      }
-      const link = linkRes.rows[0];
-      if (link.onetime && link.viewed) {
-        res.status(403).json({ error: 'Link expired' });
-        return;
-      }
-      if (link.onetime && !link.viewed) {
-        await query('UPDATE message_links SET viewed = true, updated_at = NOW() WHERE link_id = $1', [linkId]);
-      }
-    }
 
     // 2. Fetch Message Sender's User Details
     const senderQueryText = `
