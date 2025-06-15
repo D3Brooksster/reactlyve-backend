@@ -851,6 +851,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       message = legacy.rows[0];
     }
 
+    const linkViewed = message.viewed || false;
     const hasPasscode = !!message.passcode;
 
     if (hasPasscode) {
@@ -858,6 +859,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
         id: message.id,
         hasPasscode: true,
         onetime: message.onetime || false,
+        linkViewed,
         reaction_length: message.reaction_length,
         createdAt: new Date(message.createdat).toISOString()
       });
@@ -870,6 +872,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       imageUrl: message.imageurl,
       hasPasscode: false,
       onetime: message.onetime || false,
+      linkViewed,
       reaction_length: message.reaction_length,
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString()
@@ -907,6 +910,8 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       message = legacy.rows[0];
     }
 
+    const linkViewed = message.viewed || false;
+
     if (message.passcode !== passcode) {
       res.status(403).json({ error: 'Invalid passcode', verified: false });
       return;
@@ -925,6 +930,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         imageUrl: message.imageurl,
         hasPasscode: true,
         onetime: message.onetime || false,
+        linkViewed,
         passcodeVerified: true,
         mediaSize: message.media_size,
         createdAt: new Date(message.createdat).toISOString()
