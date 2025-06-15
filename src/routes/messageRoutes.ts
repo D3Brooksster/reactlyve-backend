@@ -18,7 +18,10 @@ import {
   deleteReactionById,
   deleteAllReactionsForMessage,
   submitMessageForManualReview,
-  submitReactionForManualReview
+  submitReactionForManualReview,
+  createMessageLink,
+  getMessageLinks,
+  deleteMessageLink
 } from '../controllers/messageController';
 import { requireAuth } from '../middlewares/middleware';
 import multer from 'multer';
@@ -57,6 +60,9 @@ router.get('/messages/:id', getMessageById);
 router.put('/messages/:id', requireAuth, updateMessage); // Added PUT route for updating messages
 router.get('/messages/view/:linkId', getMessageByShareableLink);
 router.post('/messages/:id/verify-passcode', verifyMessagePasscode);
+router.post('/messages/:id/links', requireAuth, createMessageLink);
+router.get('/messages/:id/links', requireAuth, getMessageLinks);
+router.delete('/messages/links/:linkId', requireAuth, deleteMessageLink);
 router.post('/reactions/init/:messageId', initReaction);
 router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactionVideo);
 router.post('/reactions/:id', upload.single('video'), recordReaction);
