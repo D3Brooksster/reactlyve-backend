@@ -22,7 +22,7 @@
 
 import { Router } from 'express';
 import passport from 'passport';
-import { googleCallback, getCurrentUser } from '../controllers/authController';
+import { googleCallback, getCurrentUser, logout } from '../controllers/authController';
 import { requireAuth } from '../middlewares/middleware';
 
 const router = Router();
@@ -41,5 +41,7 @@ router.get(
 );
 //@ts-ignore
 router.get('/me', requireAuth, getCurrentUser);
+
+router.post('/logout', logout);
 
 export default router;

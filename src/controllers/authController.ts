@@ -32,6 +32,18 @@ export const googleCallback = (req: Request, res: Response) => {
   return; // Adjusted for void compatibility
 };
 
+export const logout = (req: Request, res: Response) => {
+  const cookieOptions: any = {
+    httpOnly: true,
+    sameSite: 'lax',
+  };
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+  }
+  res.clearCookie('token', cookieOptions);
+  res.status(200).json({ message: 'Logged out successfully' });
+};
+
 export const getCurrentUser = (req: Request, res: Response) => {
   try {
     // requireAuth middleware should ensure req.user is populated.
