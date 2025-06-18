@@ -7,11 +7,16 @@ import { query } from '../config/database.config';
 // Global Express Request augmentation removed, will be handled by src/types/express.d.ts
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction):Promise<any> => {
+  let token: string | undefined;
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+  }
+  if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  const token = authHeader.split(' ')[1];
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
     // Optionally fetch full user

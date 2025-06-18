@@ -18,8 +18,16 @@ export const generateToken = (user: AppUser):string => { // Changed User to AppU
 export const googleCallback = (req: Request, res: Response) => {
   const user = req.user as AppUser; // Changed User to AppUser
   const token = generateToken(user);
-  // Redirect back to frontend with token
-  const redirectUrl = `${process.env.FRONTEND_URL}/auth/success?token=${token}`;
+  const cookieOptions: any = {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 7 * 864e5,
+  };
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+  }
+  res.cookie('token', token, cookieOptions);
+  const redirectUrl = `${process.env.FRONTEND_URL}/auth/success`;
   res.redirect(redirectUrl);
   return; // Adjusted for void compatibility
 };

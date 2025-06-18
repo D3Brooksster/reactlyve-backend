@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { Pool } from 'pg';
 import { dbConfig } from './config/database.config';
 import passport from './config/passport';
@@ -25,6 +26,7 @@ const app = express();
 app.set('trust proxy', 2);
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.use(express.urlencoded({ extended: true }));
 
