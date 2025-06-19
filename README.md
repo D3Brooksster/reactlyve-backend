@@ -94,6 +94,7 @@ Create a `.env` file in the root directory of the project and populate it with t
 PORT=3000
 NODE_ENV=development # or 'production'
 FRONTEND_URL=http://localhost:3001 # URL of your frontend application for CORS and redirects
+CSP_FRAME_ANCESTORS='none' # Allowed origins for framing. Use 'none' to disallow
 
 # Administrative Accounts
 ADMIN_EMAILS=admin1@example.com,admin2@example.com # Comma-separated list
