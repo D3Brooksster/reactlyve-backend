@@ -8,6 +8,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
     *   Google OAuth 2.0 for user sign-up and login.
     *   JWT (JSON Web Tokens) for securing API access.
     *   Tokens are set in an HTTP-only `token` cookie to mitigate XSS risks.
+    *   OAuth login uses a short-lived `state` cookie to prevent CSRF attacks.
 *   **User Management:**
     *   User roles: `user`, `admin`, `guest`.
     *   Users can view their profile and delete their own account.
@@ -143,6 +144,7 @@ The API provides several route groups for different functionalities:
 
 *   **`/api/auth`**: Handles user authentication.
     *   Google login initiation and callback.
+    *   OAuth requests include a `state` value stored in an `oauth_state` cookie and validated on callback.
     *   Fetching current authenticated user details.
     *   Logging out via `POST /api/auth/logout` (clears the auth cookie).
    *   **`/api/messages`** (and related routes for reactions/replies): Manages the messaging system.

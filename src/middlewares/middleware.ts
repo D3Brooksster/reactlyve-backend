@@ -1,5 +1,6 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, CookieOptions } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { AppUser } from '../entity/User'; // Import kept for type assertions
 import { query } from '../config/database.config';
 // AuthenticatedRequest import removed
@@ -50,4 +51,37 @@ export const requireAdminRole = (req: Request, res: Response, next: NextFunction
   } else {
     res.status(403).json({ error: 'Access denied. Admin role required.' });
   }
+};
+
+export const setOAuthStateCookie = (req: Request, res: Response, next: NextFunction) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  const cookieOptions: CookieOptions = {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000,
+  };
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+  }
+  res.cookie('oauth_state', state, cookieOptions);
+  (req as any).oauthState = state;
+  next();
+};
+
+export const verifyOAuthState = (req: Request, res: Response, next: NextFunction) => {
+  const stateCookie = req.cookies?.oauth_state;
+  const stateParam = req.query.state as string | undefined;
+  if (!stateCookie || !stateParam || stateCookie !== stateParam) {
+    res.status(400).json({ error: 'Invalid OAuth state' });
+    return;
+  }
+  const cookieOptions: CookieOptions = {
+    httpOnly: true,
+    sameSite: 'lax',
+  };
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+  }
+  res.clearCookie('oauth_state', cookieOptions);
+  next();
 };
