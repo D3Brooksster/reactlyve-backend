@@ -4,7 +4,10 @@ import { deleteInactiveAccounts } from './jobs/accountCleanupJob';
 
 // Mock node-cron
 jest.mock('node-cron', () => ({
-  schedule: jest.fn(),
+  __esModule: true,
+  default: {
+    schedule: jest.fn(),
+  },
 }));
 
 // Mock the job function itself, as we're testing scheduling, not execution
@@ -12,12 +15,28 @@ jest.mock('./jobs/accountCleanupJob', () => ({
   deleteInactiveAccounts: jest.fn(),
 }));
 
+// Mock pg Pool to avoid real database connections during tests
+jest.mock('pg', () => ({
+  Pool: jest.fn().mockImplementation(() => ({
+    query: jest.fn((...args: any[]) => {
+      const cb = args[args.length - 1];
+      if (typeof cb === 'function') {
+        cb(null, { rows: [{ now: new Date() }], rowCount: 1 });
+        return;
+      }
+      return Promise.resolve({ rows: [{ now: new Date() }], rowCount: 1 });
+    }),
+  })),
+}));
+
 // Mock app.listen to prevent the actual server from starting during tests
 // and to allow us to control its callback execution.
+const mockServer = { setTimeout: jest.fn() };
 const mockAppListen = jest.fn((port, callback) => {
   if (callback) {
     callback(); // Immediately invoke the callback for app.listen
   }
+  return mockServer; // return a mock server to avoid TypeError
 });
 
 jest.mock('express', () => {
@@ -52,7 +71,9 @@ describe('Cron job scheduling in src/index.ts', () => {
     // Dynamically import src/index.ts to execute its top-level code
     // which includes setting up the cron job inside app.listen's callback.
     // The import needs to be inside the test or a setup function that runs after mocks are established.
-    await import('./index');
+    await jest.isolateModulesAsync(async () => {
+      await import('./index');
+    });
 
     // Check that app.listen was called, which triggers the cron scheduling
     expect(mockAppListen).toHaveBeenCalled();
@@ -63,7 +84,6 @@ describe('Cron job scheduling in src/index.ts', () => {
       '0 0 * * *', // Correct cron string: daily at midnight
       expect.any(Function), // The wrapper function that calls deleteInactiveAccounts
       {
-        scheduled: true,
         timezone: "UTC" // Correct timezone
       }
     );
@@ -78,7 +98,9 @@ describe('Cron job scheduling in src/index.ts', () => {
 
   test('scheduled function handles errors from deleteInactiveAccounts', async () => {
     // Import src/index again or ensure it's imported in a way that mocks apply per test
-    await import('./index');
+    await jest.isolateModulesAsync(async () => {
+      await import('./index');
+    });
     
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     (deleteInactiveAccounts as jest.Mock).mockRejectedValueOnce(new Error('Test job error'));
