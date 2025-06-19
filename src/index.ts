@@ -37,6 +37,13 @@ app.use(
   })
 );
 
+// Set Content Security Policy to control framing
+app.use((_, res, next) => {
+  const frameAncestors = process.env.CSP_FRAME_ANCESTORS || "'none'";
+  res.setHeader('Content-Security-Policy', `frame-ancestors ${frameAncestors}`);
+  next();
+});
+
 app.use(passport.initialize());
 
 app.use((req, res, next) => {
