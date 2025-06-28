@@ -1176,6 +1176,9 @@ export const recordMediaReply = async (req: Request, res: Response): Promise<voi
     const messageId = reactionRes.rows[0].messageid;
 
     const mediatype = req.file.mimetype.startsWith('audio/') ? 'audio' : 'video';
+    // Cloudinary stores audio under the `video` resource type, so even audio
+    // files are uploaded with the video API. We keep the user's intended media
+    // type in the DB via `mediatype` for clarity.
 
     const senderPrefRes = await query('SELECT moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
     const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;

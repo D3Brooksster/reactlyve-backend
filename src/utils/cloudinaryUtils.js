@@ -156,6 +156,9 @@ exports.deleteFromCloudinary = (cloudinaryUrl) => {
 };
 
 exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', options = {}) => {
+  // This helper uses Cloudinary's video upload API. Audio files are also
+  // uploaded with `resource_type: "video"`, which is why they appear as video
+  // assets in the Cloudinary dashboard.
   if (options.moderation && options.moderation !== 'manual') {
     options.moderation_async = true;
   }
