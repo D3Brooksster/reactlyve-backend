@@ -10,7 +10,8 @@ import { AppUser } from '../entity/User'; // Changed User to AppUser
 import {
   deleteFromCloudinary,
   uploadToCloudinarymedia,
-  uploadVideoToCloudinary
+  uploadVideoToCloudinary,
+  generateDownloadUrl
 } from '../utils/cloudinaryUtils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
@@ -483,6 +484,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
           mediaType: reply.mediatype,
           thumbnailUrl: reply.thumbnailurl,
           duration: reply.duration,
+          downloadUrl: generateDownloadUrl(reply.mediaurl, `reply_${reply.id}`),
           createdAt: new Date(reply.createdat).toISOString()
         }))
       };
@@ -1250,6 +1252,7 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
           mediaType: r.mediatype,
           thumbnailUrl: r.thumbnailurl,
           duration: r.duration,
+          downloadUrl: generateDownloadUrl(r.mediaurl, `reply_${r.id}`),
           createdAt: new Date(r.createdat).toISOString()
         }))
       });
