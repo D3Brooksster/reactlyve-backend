@@ -52,6 +52,34 @@ const generateShareableLink = (): { link: string; id: string } => {
   return { link: `${baseUrl}/m/${uniqueId}`, id: uniqueId };
 };
 
+const sanitizeTitle = (title: string): string =>
+  title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+
+const formatTimestamp = (date: Date): string => {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(date.getDate())}${pad(date.getMonth() + 1)}${date.getFullYear()}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+};
+
+const buildFilename = (
+  messageTitle: string,
+  responder: string | null,
+  type: 'message' | 'reaction' | 'reply',
+  createdAt: Date,
+  url: string
+) => {
+  let ext = '';
+  try {
+    const pathname = new URL(url).pathname;
+    const dot = pathname.lastIndexOf('.');
+    if (dot !== -1) ext = pathname.substring(dot + 1);
+  } catch {
+    ext = '';
+  }
+  const titlePart = sanitizeTitle(messageTitle);
+  const responderPart = responder ? `-${responder}` : '';
+  return `Reactlyve-${titlePart}${responderPart}-${type}-${formatTimestamp(createdAt)}${ext ? '.' + ext : ''}`;
+};
+
 const uploadVideoToCloudinaryWithRetry = async (
   buffer: Buffer,
   size: number,
@@ -473,22 +501,31 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
       const { rows: replies } = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+      const reactionFilename = buildFilename(message.content, reaction.name || null, 'reaction', reaction.createdat, reaction.videourl);
       return {
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
         updatedAt: new Date(reaction.updatedat).toISOString(),
-        replies: replies.map(reply => ({
-          id: reply.id,
-          text: reply.text,
-          mediaUrl: reply.mediaurl,
-          mediaType: reply.mediatype,
-          thumbnailUrl: reply.thumbnailurl,
-          duration: reply.duration,
-          downloadUrl: generateDownloadUrl(reply.mediaurl, `reply_${reply.id}`),
-          createdAt: new Date(reply.createdat).toISOString()
-        }))
+        downloadUrl: generateDownloadUrl(reaction.videourl, reactionFilename),
+        replies: replies.map(reply => {
+          const replyFilename = buildFilename(message.content, reaction.name || null, 'reply', reply.createdat, reply.mediaurl);
+          return {
+            id: reply.id,
+            text: reply.text,
+            mediaUrl: reply.mediaurl,
+            mediaType: reply.mediatype,
+            thumbnailUrl: reply.thumbnailurl,
+            duration: reply.duration,
+            downloadUrl: generateDownloadUrl(reply.mediaurl, replyFilename),
+            createdAt: new Date(reply.createdat).toISOString()
+          };
+        })
       };
     }));
+
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
 
     res.status(200).json({
       ...message,
@@ -496,6 +533,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
+      downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
       reactions: reactionsWithReplies,
       reactions_used,
       reactions_remaining
@@ -907,6 +945,10 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       return;
     }
 
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
+
     res.status(200).json({
       id: message.id,
       content: message.content,
@@ -916,6 +958,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       linkViewed,
       reaction_length: message.reaction_length,
       mediaSize: message.media_size,
+      downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
@@ -963,6 +1006,10 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
+
     res.status(200).json({
       verified: true,
       message: {
@@ -974,6 +1021,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         linkViewed,
         passcodeVerified: true,
         mediaSize: message.media_size,
+        downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
         createdAt: new Date(message.createdat).toISOString()
       }
     });
@@ -1240,21 +1288,30 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       }
 
       const reaction = rows[0];
+      const msgRes = await query('SELECT content FROM messages WHERE id = $1', [reaction.messageid]);
+      const messageTitle = msgRes.rows.length ? msgRes.rows[0].content : '';
+
       const replyRes = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [id]);
+
+      const reactionFilename = buildFilename(messageTitle, reaction.name || null, 'reaction', reaction.createdat, reaction.videourl);
 
       res.status(200).json({
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
-        replies: replyRes.rows.map(r => ({
-          id: r.id,
-          text: r.text,
-          mediaUrl: r.mediaurl,
-          mediaType: r.mediatype,
-          thumbnailUrl: r.thumbnailurl,
-          duration: r.duration,
-          downloadUrl: generateDownloadUrl(r.mediaurl, `reply_${r.id}`),
-          createdAt: new Date(r.createdat).toISOString()
-        }))
+        downloadUrl: generateDownloadUrl(reaction.videourl, reactionFilename),
+        replies: replyRes.rows.map(r => {
+          const replyFilename = buildFilename(messageTitle, reaction.name || null, 'reply', r.createdat, r.mediaurl);
+          return {
+            id: r.id,
+            text: r.text,
+            mediaUrl: r.mediaurl,
+            mediaType: r.mediatype,
+            thumbnailUrl: r.thumbnailurl,
+            duration: r.duration,
+            downloadUrl: generateDownloadUrl(r.mediaurl, replyFilename),
+            createdAt: new Date(r.createdat).toISOString()
+          };
+        })
       });
       return;
     } catch (error) {
