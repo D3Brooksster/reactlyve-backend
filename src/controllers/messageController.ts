@@ -471,7 +471,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     }
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
-      const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+      const { rows: replies } = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
       return {
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
@@ -479,6 +479,9 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
         replies: replies.map(reply => ({
           id: reply.id,
           text: reply.text,
+          mediaUrl: reply.mediaurl,
+          mediaType: reply.mediatype,
+          thumbnailUrl: reply.thumbnailurl,
           createdAt: new Date(reply.createdat).toISOString()
         }))
       };
@@ -1120,27 +1123,91 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
+export const recordMediaReply = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id: reactionId } = req.params;
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : null;
+    if (!req.file) {
+      res.status(400).json({ error: 'No media file provided' });
+      return;
+    }
+
+    const reactionRes = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
+    if (!reactionRes.rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
+    const messageId = reactionRes.rows[0].messageid;
+
+    const mediatype = req.file.mimetype.startsWith('audio/') ? 'audio' : 'video';
+
+    const senderPrefRes = await query('SELECT moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    const uploadResult = await uploadVideoToCloudinaryWithRetry(
+      req.file.buffer,
+      req.file.size,
+      'reply_media',
+      mediatype === 'video' && moderateVideos ? { moderation: 'aws_rek_video' } : {}
+    );
+
+    const mediaUrl = uploadResult.secure_url;
+    const thumbnailUrl = mediatype === 'video' ? uploadResult.thumbnail_url : null;
+
+    if (text && text.length > 500) {
+      res.status(400).json({ error: 'Reply text too long' });
+      return;
+    }
+
+    await query(
+      `INSERT INTO replies (reactionid, text, mediaurl, mediatype, thumbnailurl, createdat, updatedat) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+      [reactionId, text, mediaUrl, mediatype, thumbnailUrl]
+    );
+
+    // mark parent message as having replies
+    query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+      console.error('Failed to update isreply for message after media reply:', err);
+    });
+
+    res.status(200).json({ success: true });
+    return;
+  } catch (error) {
+    console.error('Error recording media reply:', error);
+    res.status(500).json({ error: 'Failed to record media reply' });
+    return;
+  }
+};
 
 export const getReactionById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-  
+
       const { rows } = await query(
         `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat
          FROM reactions
          WHERE id = $1`,
         [id]
       );
-  
+
       if (!rows.length) {
         res.status(404).json({ error: 'Reaction not found' });
         return;
       }
-  
+
       const reaction = rows[0];
+      const replyRes = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, createdat FROM replies WHERE reactionid = $1', [id]);
+
       res.status(200).json({
         ...reaction,
-        createdAt: new Date(reaction.createdat).toISOString()
+        createdAt: new Date(reaction.createdat).toISOString(),
+        replies: replyRes.rows.map(r => ({
+          id: r.id,
+          text: r.text,
+          mediaUrl: r.mediaurl,
+          mediaType: r.mediatype,
+          thumbnailUrl: r.thumbnailurl,
+          createdAt: new Date(r.createdat).toISOString()
+        }))
       });
       return;
     } catch (error) {

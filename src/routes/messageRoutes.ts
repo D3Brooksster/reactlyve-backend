@@ -11,6 +11,7 @@ import {
   recordReaction,
   deleteMessageAndReaction,
   recordTextReply,
+  recordMediaReply,
   initReaction,         
   uploadReactionVideo,
   getReactionsByMessageId,
@@ -50,6 +51,19 @@ const upload = multer({
   }
 });
 
+// Multer setup for reply media (video or audio)
+const replyUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video or audio files are allowed!') as any, false);
+    }
+  }
+});
+
 // Cloudinary utility functions uploadVideoToCloudinary and uploadToCloudinarymedia moved to utils/cloudinaryUtils.ts
 
 // === Routes ===
@@ -68,6 +82,7 @@ router.put('/reactions/:reactionId/video', upload.single('video'), uploadReactio
 router.post('/reactions/:id', upload.single('video'), recordReaction);
 router.get('/reactions/message/:messageId', getReactionsByMessageId);
 router.post('/reactions/:id/reply', recordTextReply);
+router.post('/reactions/:id/reply/media', replyUpload.single('media'), recordMediaReply);
 router.delete('/messages/:id/delete', deleteMessageAndReaction);
 router.get('/reactions/:id', getReactionById);
 router.delete('/reactions/:reactionId/delete', requireAuth, deleteReactionById);
