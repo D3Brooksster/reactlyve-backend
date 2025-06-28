@@ -471,7 +471,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     }
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
-      const { rows: replies } = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+      const { rows: replies } = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
       return {
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
@@ -482,6 +482,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
           mediaUrl: reply.mediaurl,
           mediaType: reply.mediatype,
           thumbnailUrl: reply.thumbnailurl,
+          duration: reply.duration,
           createdAt: new Date(reply.createdat).toISOString()
         }))
       };
@@ -1188,6 +1189,9 @@ export const recordMediaReply = async (req: Request, res: Response): Promise<voi
 
     const mediaUrl = uploadResult.secure_url;
     const thumbnailUrl = mediatype === 'video' ? uploadResult.thumbnail_url : null;
+    const duration = uploadResult.duration !== null && uploadResult.duration !== undefined
+      ? Math.round(uploadResult.duration)
+      : 0;
 
     if (text && text.length > 500) {
       res.status(400).json({ error: 'Reply text too long' });
@@ -1195,8 +1199,9 @@ export const recordMediaReply = async (req: Request, res: Response): Promise<voi
     }
 
     await query(
-      `INSERT INTO replies (reactionid, text, mediaurl, mediatype, thumbnailurl, createdat, updatedat) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-      [reactionId, text, mediaUrl, mediatype, thumbnailUrl]
+      `INSERT INTO replies (reactionid, text, mediaurl, mediatype, thumbnailurl, duration, createdat, updatedat)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+      [reactionId, text, mediaUrl, mediatype, thumbnailUrl, duration]
     );
 
     // mark parent message as having replies
@@ -1230,7 +1235,7 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
       }
 
       const reaction = rows[0];
-      const replyRes = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, createdat FROM replies WHERE reactionid = $1', [id]);
+      const replyRes = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [id]);
 
       res.status(200).json({
         ...reaction,
@@ -1241,6 +1246,7 @@ export const getReactionById = async (req: Request, res: Response): Promise<void
           mediaUrl: r.mediaurl,
           mediaType: r.mediatype,
           thumbnailUrl: r.thumbnailurl,
+          duration: r.duration,
           createdAt: new Date(r.createdat).toISOString()
         }))
       });
