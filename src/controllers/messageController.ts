@@ -736,9 +736,15 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     // Collect all reaction IDs
     const reactionIds = reactionsToDelete.map(r => r.id);
 
-    // Delete associated replies for all fetched reactions
-    // Using ANY($1::uuid[]) for potentially better performance if many reaction IDs
+    // Gather media URLs from replies for cleanup before deletion
+    let replyMedia: { mediaurl: string }[] = [];
     if (reactionIds.length > 0) {
+      const replyResult = await query(
+        'SELECT mediaurl FROM replies WHERE reactionid = ANY($1::uuid[]) AND mediaurl IS NOT NULL',
+        [reactionIds]
+      );
+      replyMedia = replyResult.rows;
+      // Delete associated replies for all fetched reactions
       await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
     }
     
@@ -757,6 +763,17 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
           cloudinaryDeletionsFailed = true;
           console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
           // Log error, but don't fail the entire operation
+        }
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
         }
       }
     }
@@ -796,6 +813,13 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
     }
     const reactionVideoUrl = reactionQueryResult.rows[0].videourl;
 
+    // Gather reply media URLs before deletion
+    const replyMediaRes = await query(
+      'SELECT mediaurl FROM replies WHERE reactionid = $1 AND mediaurl IS NOT NULL',
+      [reactionId]
+    );
+    const replyMedia = replyMediaRes.rows as { mediaurl: string }[];
+
     // Database Deletion (Order is Important)
     // 1. Delete associated replies
     await query('DELETE FROM replies WHERE reactionid = $1', [reactionId]);
@@ -814,6 +838,17 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
         cloudinaryDeletionFailed = true;
         console.error(`Failed to delete reaction video ${reactionVideoUrl} from Cloudinary:`, cloudinaryError);
         // Log error, but don't fail the entire operation
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
+        }
       }
     }
 
@@ -1244,6 +1279,16 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     const reactionsQueryResult = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
     const reactions = reactionsQueryResult.rows; // Array of { id: reactionId, videourl: videoUrl }
 
+    const reactionIds = reactions.map(r => r.id);
+    let replyMedia: { mediaurl: string }[] = [];
+    if (reactionIds.length) {
+      const replyRes = await query(
+        'SELECT mediaurl FROM replies WHERE reactionid = ANY($1::uuid[]) AND mediaurl IS NOT NULL',
+        [reactionIds]
+      );
+      replyMedia = replyRes.rows;
+    }
+
     // 3. Database Deletion (Order is Important)
     // For each reaction found, delete its associated replies
     for (const reaction of reactions) {
@@ -1282,6 +1327,17 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
           cloudinaryDeletionsFailed = true;
           console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
           // Log error, but don't fail the entire operation
+        }
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
         }
       }
     }
