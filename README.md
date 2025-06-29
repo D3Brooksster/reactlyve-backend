@@ -5,7 +5,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
 ## Features
 
 *   **Authentication:**
-    *   Google OAuth 2.0 for user sign-up and login.
+    *   Google, Microsoft, Facebook, and X (Twitter) OAuth login.
     *   JWT (JSON Web Tokens) for securing API access.
     *   Tokens are set in an HTTP-only `token` cookie to mitigate XSS risks.
     *   OAuth login uses a short-lived `state` cookie to prevent CSRF attacks.
@@ -111,6 +111,21 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback # Adjust if your port or path differs
 
+# Microsoft OAuth Credentials
+MS_CLIENT_ID=your_microsoft_client_id
+MS_CLIENT_SECRET=your_microsoft_client_secret
+MS_CALLBACK_URL=http://localhost:3000/api/auth/microsoft/callback
+
+# Facebook OAuth Credentials
+FB_CLIENT_ID=your_facebook_app_id
+FB_CLIENT_SECRET=your_facebook_app_secret
+FB_CALLBACK_URL=http://localhost:3000/api/auth/facebook/callback
+
+# Twitter (X) OAuth Credentials
+TWITTER_CONSUMER_KEY=your_twitter_consumer_key
+TWITTER_CONSUMER_SECRET=your_twitter_consumer_secret
+TWITTER_CALLBACK_URL=http://localhost:3000/api/auth/twitter/callback
+
 # Cloudinary Credentials
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
@@ -137,7 +152,16 @@ JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
 JWT_EXPIRES_IN=1h # Token expiry, e.g., 1h or 7d
 ```
 
-**Note:** Ensure `GOOGLE_CALLBACK_URL` matches the redirect URI configured in your Google Cloud Console for the OAuth client.
+**Note:** Ensure each callback URL (`GOOGLE_CALLBACK_URL`, `MS_CALLBACK_URL`, `FB_CALLBACK_URL`, and `TWITTER_CALLBACK_URL`) matches the redirect URI configured in the respective developer portals.
+
+### Creating OAuth Providers
+
+1. **Google**: Create credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and obtain a Client ID and Secret. Set an authorized redirect URL matching `GOOGLE_CALLBACK_URL`.
+2. **Microsoft**: Register an application in the [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade). Add a redirect URI matching `MS_CALLBACK_URL` and grant the `user.read` permission.
+3. **Facebook**: Create an app in the [Facebook Developer Console](https://developers.facebook.com/). Configure the OAuth redirect to `FB_CALLBACK_URL` and enable the email permission.
+4. **X (Twitter)**: Create a project and app in the [Twitter Developer Portal](https://developer.twitter.com/). Set the callback URL to `TWITTER_CALLBACK_URL` and enable access to email if required.
+
+After creating the credentials, copy the provided IDs and secrets into your `.env` file as shown above.
 
 ## API Endpoints
 
