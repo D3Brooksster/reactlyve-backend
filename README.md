@@ -61,7 +61,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
         ```bash
         psql -U your_postgres_user -d your_database_name -f migration.sql
         ```
-    *   The project also uses incremental migrations located in the `migrations/` directory. For example, `migrations/V1__add_last_login_to_users.sql` adds the `last_login` column to the `users` table. These should be applied in order after the base schema.
+   *   The project also uses incremental migrations located in the `migrations/` directory. For example, `migrations/V1__add_last_login_to_users.sql` adds the `last_login` column to the `users` table. Apply each migration in order after the base schema, including the new `migrations/202507011200_auth_providers.sql` file which adds columns for the Microsoft, Facebook, and Twitter IDs.
     *   *Note:* For a more robust migration management system, consider integrating tools like Flyway or `node-pg-migrate` if not already implicitly used. The current setup requires manual application or a custom script.
 
 ### Running the Application
@@ -161,7 +161,19 @@ JWT_EXPIRES_IN=1h # Token expiry, e.g., 1h or 7d
 3. **Facebook**: Create an app in the [Facebook Developer Console](https://developers.facebook.com/). Configure the OAuth redirect to `FB_CALLBACK_URL` and enable the email permission.
 4. **X (Twitter)**: Create a project and app in the [Twitter Developer Portal](https://developer.twitter.com/). Set the callback URL to `TWITTER_CALLBACK_URL` and enable access to email if required.
 
-After creating the credentials, copy the provided IDs and secrets into your `.env` file as shown above.
+After creating the credentials:
+
+1. Copy each provider's ID and secret into your `.env` file using the variables listed above.
+2. Install the new Passport strategy packages:
+   ```bash
+   npm install
+   ```
+   If `NODE_ENV` is set to `production`, run `npm install --include=dev` so Jest and other dev tools are available.
+3. Apply the migration `migrations/202507011200_auth_providers.sql` to add the new provider columns to the `users` table:
+   ```bash
+   psql -U your_postgres_user -d your_database_name -f migrations/202507011200_auth_providers.sql
+   ```
+4. Restart the server so Passport picks up the new configuration.
 
 ## API Endpoints
 
