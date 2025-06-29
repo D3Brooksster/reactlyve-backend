@@ -18,8 +18,8 @@ if (process.env.CLOUDINARY_OVERLAY_WIDTH_PERCENT) {
   }
 }
 const NEW_WORKING_OVERLAY_PARAMS = `l_${OVERLAY_PUBLIC_ID},fl_relative,w_${OVERLAY_WIDTH_PERCENT}/fl_layer_apply,g_south_east,x_10,y_10`;
-const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `f_auto,q_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
-const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `w_1280,c_limit,q_auto,f_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
+const SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `f_mp4,q_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
+const LARGE_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING = `w_1280,c_limit,q_auto,f_mp4/${NEW_WORKING_OVERLAY_PARAMS}`;
 const IMAGE_OVERLAY_TRANSFORMATION_STRING = `f_auto,q_auto/${NEW_WORKING_OVERLAY_PARAMS}`;
 const JUST_THE_OVERLAY_TRANSFORMATION = `l_${OVERLAY_PUBLIC_ID},fl_relative,w_${OVERLAY_WIDTH_PERCENT},g_south_east,x_10,y_10,fl_layer_apply`; // This might be unused or deprecated after this change
 
@@ -406,6 +406,17 @@ exports.generateDownloadUrl = (cloudinaryUrl, filename) => {
         secure: true
       };
       if (versionMatch) options.version = versionMatch[1];
+
+      if (extracted.resource_type === 'video') {
+        options.transformation = [
+          { raw_transformation: exports.SMALL_FILE_VIDEO_OVERLAY_TRANSFORMATION_STRING }
+        ];
+      } else if (extracted.resource_type === 'image') {
+        options.transformation = [
+          { raw_transformation: exports.IMAGE_OVERLAY_TRANSFORMATION_STRING }
+        ];
+      }
+
       return cloudinary.url(extracted.public_id, options);
     }
 

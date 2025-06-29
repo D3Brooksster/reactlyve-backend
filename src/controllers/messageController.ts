@@ -53,7 +53,10 @@ const generateShareableLink = (): { link: string; id: string } => {
 };
 
 const sanitizeTitle = (title: string): string =>
-  title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+  title
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_]/g, '')
+    .slice(0, 20);
 
 const formatTimestamp = (date: Date): string => {
   const pad = (n: number) => n.toString().padStart(2, '0');
