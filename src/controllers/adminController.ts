@@ -119,6 +119,15 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
       const reactionIds = reactions.map(r => r.id);
       const reactionVideoUrls = reactions.map(r => r.videourl).filter(url => url); // Assuming 'videoUrl' and filter nulls
 
+      let replyMedia: { mediaurl: string }[] = [];
+      if (reactionIds.length) {
+        const replyRes = await query(
+          'SELECT mediaurl FROM replies WHERE reactionid = ANY($1::uuid[]) AND mediaurl IS NOT NULL',
+          [reactionIds]
+        );
+        replyMedia = replyRes.rows;
+      }
+
       // 3. Delete replies associated with these reactions (if any reactionIds)
       if (reactionIds.length > 0) {
         await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
@@ -147,6 +156,16 @@ export const removeUser = async (req: Request, res: Response): Promise<void> => 
           } catch (cloudinaryError) {
             console.error(`Admin: Failed to delete reaction video ${videoUrl} from Cloudinary:`, cloudinaryError);
             // Do not re-throw, allow the process to continue
+          }
+        }
+      }
+
+      for (const rm of replyMedia) {
+        if (rm.mediaurl) {
+          try {
+            await deleteFromCloudinary(rm.mediaurl);
+          } catch (cloudinaryError) {
+            console.error(`Admin: Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
           }
         }
       }

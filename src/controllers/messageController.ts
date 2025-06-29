@@ -10,7 +10,8 @@ import { AppUser } from '../entity/User'; // Changed User to AppUser
 import {
   deleteFromCloudinary,
   uploadToCloudinarymedia,
-  uploadVideoToCloudinary
+  uploadVideoToCloudinary,
+  generateDownloadUrl
 } from '../utils/cloudinaryUtils';
 // Import path changed for uploadToCloudinarymedia and uploadVideoToCloudinary
 
@@ -49,6 +50,34 @@ const generateShareableLink = (): { link: string; id: string } => {
   const baseUrl = process.env.FRONTEND_URL || '';
   const uniqueId = crypto.randomBytes(8).toString('hex');
   return { link: `${baseUrl}/m/${uniqueId}`, id: uniqueId };
+};
+
+const sanitizeTitle = (title: string): string =>
+  title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+
+const formatTimestamp = (date: Date): string => {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(date.getDate())}${pad(date.getMonth() + 1)}${date.getFullYear()}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+};
+
+const buildFilename = (
+  messageTitle: string,
+  responder: string | null,
+  type: 'message' | 'reaction' | 'reply',
+  createdAt: Date,
+  url: string
+) => {
+  let ext = '';
+  try {
+    const pathname = new URL(url).pathname;
+    const dot = pathname.lastIndexOf('.');
+    if (dot !== -1) ext = pathname.substring(dot + 1);
+  } catch {
+    ext = '';
+  }
+  const titlePart = sanitizeTitle(messageTitle);
+  const responderPart = responder ? `-${responder}` : '';
+  return `Reactlyve-${titlePart}${responderPart}-${type}-${formatTimestamp(createdAt)}${ext ? '.' + ext : ''}`;
 };
 
 const uploadVideoToCloudinaryWithRetry = async (
@@ -471,18 +500,32 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
     }
 
     const reactionsWithReplies = await Promise.all(reactions.map(async reaction => {
-      const { rows: replies } = await query('SELECT id, text, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+      const { rows: replies } = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [reaction.id]);
+      const reactionFilename = buildFilename(message.content, reaction.name || null, 'reaction', reaction.createdat, reaction.videourl);
       return {
         ...reaction,
         createdAt: new Date(reaction.createdat).toISOString(),
         updatedAt: new Date(reaction.updatedat).toISOString(),
-        replies: replies.map(reply => ({
-          id: reply.id,
-          text: reply.text,
-          createdAt: new Date(reply.createdat).toISOString()
-        }))
+        downloadUrl: generateDownloadUrl(reaction.videourl, reactionFilename),
+        replies: replies.map(reply => {
+          const replyFilename = buildFilename(message.content, reaction.name || null, 'reply', reply.createdat, reply.mediaurl);
+          return {
+            id: reply.id,
+            text: reply.text,
+            mediaUrl: reply.mediaurl,
+            mediaType: reply.mediatype,
+            thumbnailUrl: reply.thumbnailurl,
+            duration: reply.duration,
+            downloadUrl: generateDownloadUrl(reply.mediaurl, replyFilename),
+            createdAt: new Date(reply.createdat).toISOString()
+          };
+        })
       };
     }));
+
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
 
     res.status(200).json({
       ...message,
@@ -490,6 +533,7 @@ export const getMessageById = async (req: Request, res: Response): Promise<void>
       mediaSize: message.media_size,
       createdAt: new Date(message.createdat).toISOString(),
       updatedAt: new Date(message.updatedat).toISOString(),
+      downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
       reactions: reactionsWithReplies,
       reactions_used,
       reactions_remaining
@@ -733,9 +777,15 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
     // Collect all reaction IDs
     const reactionIds = reactionsToDelete.map(r => r.id);
 
-    // Delete associated replies for all fetched reactions
-    // Using ANY($1::uuid[]) for potentially better performance if many reaction IDs
+    // Gather media URLs from replies for cleanup before deletion
+    let replyMedia: { mediaurl: string }[] = [];
     if (reactionIds.length > 0) {
+      const replyResult = await query(
+        'SELECT mediaurl FROM replies WHERE reactionid = ANY($1::uuid[]) AND mediaurl IS NOT NULL',
+        [reactionIds]
+      );
+      replyMedia = replyResult.rows;
+      // Delete associated replies for all fetched reactions
       await query('DELETE FROM replies WHERE reactionid = ANY($1::uuid[])', [reactionIds]);
     }
     
@@ -754,6 +804,17 @@ export const deleteAllReactionsForMessage = async (req: Request, res: Response):
           cloudinaryDeletionsFailed = true;
           console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
           // Log error, but don't fail the entire operation
+        }
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
         }
       }
     }
@@ -793,6 +854,13 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
     }
     const reactionVideoUrl = reactionQueryResult.rows[0].videourl;
 
+    // Gather reply media URLs before deletion
+    const replyMediaRes = await query(
+      'SELECT mediaurl FROM replies WHERE reactionid = $1 AND mediaurl IS NOT NULL',
+      [reactionId]
+    );
+    const replyMedia = replyMediaRes.rows as { mediaurl: string }[];
+
     // Database Deletion (Order is Important)
     // 1. Delete associated replies
     await query('DELETE FROM replies WHERE reactionid = $1', [reactionId]);
@@ -811,6 +879,17 @@ export const deleteReactionById = async (req: Request, res: Response): Promise<v
         cloudinaryDeletionFailed = true;
         console.error(`Failed to delete reaction video ${reactionVideoUrl} from Cloudinary:`, cloudinaryError);
         // Log error, but don't fail the entire operation
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
+        }
       }
     }
 
@@ -866,6 +945,10 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       return;
     }
 
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
+
     res.status(200).json({
       id: message.id,
       content: message.content,
@@ -875,6 +958,7 @@ export const getMessageByShareableLink = async (req: Request, res: Response): Pr
       linkViewed,
       reaction_length: message.reaction_length,
       mediaSize: message.media_size,
+      downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
       createdAt: new Date(message.createdat).toISOString()
     });
     return;
@@ -922,6 +1006,10 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
       console.error('Failed to mark message as viewed after passcode verification:', err);
     });
 
+    const messageFilename = message.imageurl
+      ? buildFilename(message.content, null, 'message', message.createdat, message.imageurl)
+      : null;
+
     res.status(200).json({
       verified: true,
       message: {
@@ -933,6 +1021,7 @@ export const verifyMessagePasscode = async (req: Request, res: Response): Promis
         linkViewed,
         passcodeVerified: true,
         mediaSize: message.media_size,
+        downloadUrl: message.imageurl && messageFilename ? generateDownloadUrl(message.imageurl, messageFilename) : undefined,
         createdAt: new Date(message.createdat).toISOString()
       }
     });
@@ -1120,27 +1209,106 @@ export const recordTextReply = async (req: Request, res: Response): Promise<void
   }
 };
 
+export const recordMediaReply = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id: reactionId } = req.params;
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : null;
+    if (!req.file) {
+      res.status(400).json({ error: 'No media file provided' });
+      return;
+    }
+
+    const reactionRes = await query('SELECT messageid FROM reactions WHERE id = $1', [reactionId]);
+    if (!reactionRes.rows.length) {
+      res.status(404).json({ error: 'Reaction not found' });
+      return;
+    }
+    const messageId = reactionRes.rows[0].messageid;
+
+    const mediatype = 'video';
+
+    const senderPrefRes = await query('SELECT moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
+    const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
+
+    const uploadResult = await uploadVideoToCloudinaryWithRetry(
+      req.file.buffer,
+      req.file.size,
+      'reply_media',
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
+    );
+
+    const mediaUrl = uploadResult.secure_url;
+    const thumbnailUrl = uploadResult.thumbnail_url;
+    const duration = uploadResult.duration !== null && uploadResult.duration !== undefined
+      ? Math.round(uploadResult.duration)
+      : 0;
+
+    if (text && text.length > 500) {
+      res.status(400).json({ error: 'Reply text too long' });
+      return;
+    }
+
+    await query(
+      `INSERT INTO replies (reactionid, text, mediaurl, mediatype, thumbnailurl, duration, createdat, updatedat)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+      [reactionId, text, mediaUrl, mediatype, thumbnailUrl, duration]
+    );
+
+    // mark parent message as having replies
+    query('UPDATE messages SET isreply = true WHERE id = $1', [messageId]).catch(err => {
+      console.error('Failed to update isreply for message after media reply:', err);
+    });
+
+    res.status(200).json({ success: true });
+    return;
+  } catch (error) {
+    console.error('Error recording media reply:', error);
+    res.status(500).json({ error: 'Failed to record media reply' });
+    return;
+  }
+};
 
 export const getReactionById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-  
+
       const { rows } = await query(
         `SELECT id, messageid, videourl, thumbnailurl, duration, name, createdat
          FROM reactions
          WHERE id = $1`,
         [id]
       );
-  
+
       if (!rows.length) {
         res.status(404).json({ error: 'Reaction not found' });
         return;
       }
-  
+
       const reaction = rows[0];
+      const msgRes = await query('SELECT content FROM messages WHERE id = $1', [reaction.messageid]);
+      const messageTitle = msgRes.rows.length ? msgRes.rows[0].content : '';
+
+      const replyRes = await query('SELECT id, text, mediaurl, mediatype, thumbnailurl, duration, createdat FROM replies WHERE reactionid = $1', [id]);
+
+      const reactionFilename = buildFilename(messageTitle, reaction.name || null, 'reaction', reaction.createdat, reaction.videourl);
+
       res.status(200).json({
         ...reaction,
-        createdAt: new Date(reaction.createdat).toISOString()
+        createdAt: new Date(reaction.createdat).toISOString(),
+        downloadUrl: generateDownloadUrl(reaction.videourl, reactionFilename),
+        replies: replyRes.rows.map(r => {
+          const replyFilename = buildFilename(messageTitle, reaction.name || null, 'reply', r.createdat, r.mediaurl);
+          return {
+            id: r.id,
+            text: r.text,
+            mediaUrl: r.mediaurl,
+            mediaType: r.mediatype,
+            thumbnailUrl: r.thumbnailurl,
+            duration: r.duration,
+            downloadUrl: generateDownloadUrl(r.mediaurl, replyFilename),
+            createdAt: new Date(r.createdat).toISOString()
+          };
+        })
       });
       return;
     } catch (error) {
@@ -1176,6 +1344,16 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
     // 2. Fetch Reactions and their videoUrls
     const reactionsQueryResult = await query('SELECT id, videourl FROM reactions WHERE messageid = $1', [messageId]);
     const reactions = reactionsQueryResult.rows; // Array of { id: reactionId, videourl: videoUrl }
+
+    const reactionIds = reactions.map(r => r.id);
+    let replyMedia: { mediaurl: string }[] = [];
+    if (reactionIds.length) {
+      const replyRes = await query(
+        'SELECT mediaurl FROM replies WHERE reactionid = ANY($1::uuid[]) AND mediaurl IS NOT NULL',
+        [reactionIds]
+      );
+      replyMedia = replyRes.rows;
+    }
 
     // 3. Database Deletion (Order is Important)
     // For each reaction found, delete its associated replies
@@ -1215,6 +1393,17 @@ export const deleteMessageAndReaction = async (req: Request, res: Response): Pro
           cloudinaryDeletionsFailed = true;
           console.error(`Failed to delete reaction video ${reaction.videourl} from Cloudinary:`, cloudinaryError);
           // Log error, but don't fail the entire operation
+        }
+      }
+    }
+
+    for (const rm of replyMedia) {
+      if (rm.mediaurl) {
+        try {
+          await deleteFromCloudinary(rm.mediaurl);
+        } catch (cloudinaryError) {
+          cloudinaryDeletionsFailed = true;
+          console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary:`, cloudinaryError);
         }
       }
     }

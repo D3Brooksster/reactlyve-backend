@@ -42,6 +42,12 @@ async function processUser(user: AppUser): Promise<void> {
 
       for (const reaction of reactions) {
         log(`Processing reaction ID: ${reaction.id} for message ID: ${message.id}`);
+
+        const replyMediaRes = await client.query(
+          'SELECT mediaurl FROM replies WHERE reactionid = $1 AND mediaurl IS NOT NULL',
+          [reaction.id]
+        );
+
         const deleteRepliesResult = await client.query(
           'DELETE FROM replies WHERE reactionid = $1',
           [reaction.id]
@@ -58,6 +64,14 @@ async function processUser(user: AppUser): Promise<void> {
             log(`Successfully deleted video from Cloudinary for reaction ID: ${reaction.id}`);
           } catch (cloudinaryError) {
             console.error(`Failed to delete video from Cloudinary for reaction ID: ${reaction.id}, URL: ${reaction.videourl}. Error:`, cloudinaryError);
+          }
+        }
+
+        for (const rm of replyMediaRes.rows as { mediaurl: string }[]) {
+          try {
+            await deleteFromCloudinary(rm.mediaurl);
+          } catch (cloudinaryError) {
+            console.error(`Failed to delete reply media ${rm.mediaurl} from Cloudinary for reaction ID: ${reaction.id}. Error:`, cloudinaryError);
           }
         }
       }

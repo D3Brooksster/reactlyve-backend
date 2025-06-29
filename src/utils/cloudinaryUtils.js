@@ -156,6 +156,9 @@ exports.deleteFromCloudinary = (cloudinaryUrl) => {
 };
 
 exports.uploadVideoToCloudinary = (buffer, fileSize, folder = 'reactions', options = {}) => {
+  // This helper uses Cloudinary's video upload API. Audio files are also
+  // uploaded with `resource_type: "video"`, which is why they appear as video
+  // assets in the Cloudinary dashboard.
   if (options.moderation && options.moderation !== 'manual') {
     options.moderation_async = true;
   }
@@ -382,4 +385,39 @@ exports.deleteMultipleFromCloudinary = (publicIds, resourceType = 'image') => {
       resolve(result);
     });
   });
+};
+
+exports.generateDownloadUrl = (cloudinaryUrl, filename) => {
+  if (typeof cloudinaryUrl !== 'string') return '';
+
+  try {
+    const parsed = new URL(cloudinaryUrl);
+
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+
+    const extracted = exports.extractPublicIdAndResourceType(cloudinaryUrl);
+    if (extracted) {
+      const versionMatch = parsed.pathname.match(/\/v(\d+)\//);
+      const options = {
+        resource_type: extracted.resource_type,
+        type: 'upload',
+        flags: `attachment:${nameWithoutExt}`,
+        sign_url: true,
+        secure: true
+      };
+      if (versionMatch) options.version = versionMatch[1];
+      return cloudinary.url(extracted.public_id, options);
+    }
+
+    const segments = parsed.pathname.split('/');
+    const uploadIndex = segments.indexOf('upload');
+    if (uploadIndex !== -1) {
+      segments.splice(uploadIndex + 1, 0, `fl_attachment:${nameWithoutExt}`);
+      parsed.pathname = segments.join('/');
+    }
+    return parsed.toString();
+  } catch (err) {
+    console.error('Failed to generate download URL:', err);
+    return cloudinaryUrl;
+  }
 };

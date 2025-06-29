@@ -33,3 +33,5 @@ export declare const OVERLAY_PUBLIC_ID: string;
  * `CLOUDINARY_OVERLAY_WIDTH_PERCENT` environment variable. Defaults to `0.3`.
  */
 export declare const OVERLAY_WIDTH_PERCENT: string;
+
+export declare function generateDownloadUrl(cloudinaryUrl: string, filename: string): string;
