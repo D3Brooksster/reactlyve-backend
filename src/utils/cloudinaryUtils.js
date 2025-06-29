@@ -389,15 +389,33 @@ exports.deleteMultipleFromCloudinary = (publicIds, resourceType = 'image') => {
 
 exports.generateDownloadUrl = (cloudinaryUrl, filename) => {
   if (typeof cloudinaryUrl !== 'string') return '';
+
   try {
-    const url = new URL(cloudinaryUrl);
-    const segments = url.pathname.split('/');
+    const parsed = new URL(cloudinaryUrl);
+
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+
+    const extracted = exports.extractPublicIdAndResourceType(cloudinaryUrl);
+    if (extracted) {
+      const versionMatch = parsed.pathname.match(/\/v(\d+)\//);
+      const options = {
+        resource_type: extracted.resource_type,
+        type: 'upload',
+        flags: `attachment:${nameWithoutExt}`,
+        sign_url: true,
+        secure: true
+      };
+      if (versionMatch) options.version = versionMatch[1];
+      return cloudinary.url(extracted.public_id, options);
+    }
+
+    const segments = parsed.pathname.split('/');
     const uploadIndex = segments.indexOf('upload');
     if (uploadIndex !== -1) {
-      segments.splice(uploadIndex + 1, 0, `fl_attachment:${filename}`);
-      url.pathname = segments.join('/');
+      segments.splice(uploadIndex + 1, 0, `fl_attachment:${nameWithoutExt}`);
+      parsed.pathname = segments.join('/');
     }
-    return url.toString();
+    return parsed.toString();
   } catch (err) {
     console.error('Failed to generate download URL:', err);
     return cloudinaryUrl;
