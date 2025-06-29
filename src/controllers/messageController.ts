@@ -1225,10 +1225,7 @@ export const recordMediaReply = async (req: Request, res: Response): Promise<voi
     }
     const messageId = reactionRes.rows[0].messageid;
 
-    const mediatype = req.file.mimetype.startsWith('audio/') ? 'audio' : 'video';
-    // Cloudinary stores audio under the `video` resource type, so even audio
-    // files are uploaded with the video API. We keep the user's intended media
-    // type in the DB via `mediatype` for clarity.
+    const mediatype = 'video';
 
     const senderPrefRes = await query('SELECT moderate_videos FROM messages m JOIN users u ON m.senderid = u.id WHERE m.id = $1', [messageId]);
     const moderateVideos = senderPrefRes.rows.length ? senderPrefRes.rows[0].moderate_videos === true : false;
@@ -1237,11 +1234,11 @@ export const recordMediaReply = async (req: Request, res: Response): Promise<voi
       req.file.buffer,
       req.file.size,
       'reply_media',
-      mediatype === 'video' && moderateVideos ? { moderation: 'aws_rek_video' } : {}
+      moderateVideos ? { moderation: 'aws_rek_video' } : {}
     );
 
     const mediaUrl = uploadResult.secure_url;
-    const thumbnailUrl = mediatype === 'video' ? uploadResult.thumbnail_url : null;
+    const thumbnailUrl = uploadResult.thumbnail_url;
     const duration = uploadResult.duration !== null && uploadResult.duration !== undefined
       ? Math.round(uploadResult.duration)
       : 0;

@@ -51,15 +51,15 @@ const upload = multer({
   }
 });
 
-// Multer setup for reply media (video or audio)
+// Multer setup for reply media (video only)
 const replyUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+    if (file.mimetype.startsWith('video/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only video or audio files are allowed!') as any, false);
+      cb(new Error('Only video files are allowed!') as any, false);
     }
   }
 });
