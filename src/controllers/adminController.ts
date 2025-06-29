@@ -3,6 +3,7 @@ import { query } from '../config/database.config';
 import { AppUser } from '../entity/User'; // Changed User to AppUser
 import { deleteFromCloudinary, extractPublicIdAndResourceType } from '../utils/cloudinaryUtils';
 
+import { log } from "../utils/logger";
 // AuthenticatedRequest interface removed, relying on global Express.Request augmentation
 
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
@@ -221,9 +222,9 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
   } = req.body;
 
   if (process.env.NODE_ENV === 'development') {
-    console.log('[setUserLimits] incoming body for user %s:', userId, req.body);
+    log('[setUserLimits] incoming body for user %s:', userId, req.body);
   } else {
-    console.log('[setUserLimits] request for user %s', userId);
+    log('[setUserLimits] request for user %s', userId);
   }
 
   // Basic validation
@@ -308,12 +309,12 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     const updateUserQuery = `UPDATE users SET ${fieldsToUpdate.join(', ')} WHERE id = $${queryParamIndex} RETURNING *;`;
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('[setUserLimits] query:', updateUserQuery, 'params:', values);
+      log('[setUserLimits] query:', updateUserQuery, 'params:', values);
     }
 
     const { rows, rowCount } = await query(updateUserQuery, values);
     if (process.env.NODE_ENV === 'development') {
-      console.log('[setUserLimits] affected rows:', rowCount);
+      log('[setUserLimits] affected rows:', rowCount);
     }
     if (rows.length === 0) {
       res.status(404).json({ error: 'User not found or update failed.' });
@@ -322,7 +323,7 @@ export const setUserLimits = async (req: Request, res: Response): Promise<void> 
     // Return all fields of the updated user, as fetched by RETURNING *
     const updatedUser = rows[0] as AppUser;
     if (process.env.NODE_ENV === 'development') {
-      console.log('[setUserLimits] updated user:', updatedUser);
+      log('[setUserLimits] updated user:', updatedUser);
     }
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'max_reactions_per_message')) {
