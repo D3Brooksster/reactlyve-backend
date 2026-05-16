@@ -24,6 +24,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     email: user.email,
     picture: user.picture,
     googleId: user.google_id, // Map google_id to googleId
+    microsoftId: user.microsoft_id,
+    facebookId: user.facebook_id,
+    twitterId: user.twitter_id,
     lastLogin: user.last_login ? new Date(user.last_login).toISOString() : null, // Map last_login to lastLogin
     role: user.role,
     createdAt: user.created_at ? new Date(user.created_at).toISOString() : null, // Map created_at to createdAt
@@ -254,6 +257,9 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
       email: updatedUser.email,
       picture: updatedUser.picture,
       googleId: updatedUser.google_id,
+      microsoftId: updatedUser.microsoft_id,
+      facebookId: updatedUser.facebook_id,
+      twitterId: updatedUser.twitter_id,
       lastLogin: updatedUser.last_login ? new Date(updatedUser.last_login).toISOString() : null,
       role: updatedUser.role,
       createdAt: updatedUser.created_at ? new Date(updatedUser.created_at).toISOString() : null,

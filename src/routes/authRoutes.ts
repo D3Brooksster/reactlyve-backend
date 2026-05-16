@@ -35,6 +35,58 @@ router.get('/google', setOAuthStateCookie, (req: any, res, next) => {
   })(req, res, next);
 });
 
+router.get('/microsoft', setOAuthStateCookie, (req: any, res, next) => {
+  const state = req.oauthState as string;
+  passport.authenticate('microsoft', {
+    scope: ['user.read'],
+    state,
+  })(req, res, next);
+});
+
+router.get('/facebook', setOAuthStateCookie, (req: any, res, next) => {
+  const state = req.oauthState as string;
+  passport.authenticate('facebook', {
+    scope: ['email'],
+    state,
+  })(req, res, next);
+});
+
+router.get('/twitter', setOAuthStateCookie, (req: any, res, next) => {
+  const state = req.oauthState as string;
+  passport.authenticate('twitter', { state })(req, res, next);
+});
+
+router.get(
+  '/microsoft/callback',
+  verifyOAuthState,
+  passport.authenticate('microsoft', {
+    session: false,
+    failureRedirect: `${process.env.FRONTEND_URL}/login`
+  }),
+  googleCallback
+);
+
+router.get(
+  '/facebook/callback',
+  verifyOAuthState,
+  passport.authenticate('facebook', {
+    session: false,
+    failureRedirect: `${process.env.FRONTEND_URL}/login`,
+    scope: ['email']
+  }),
+  googleCallback
+);
+
+router.get(
+  '/twitter/callback',
+  verifyOAuthState,
+  passport.authenticate('twitter', {
+    session: false,
+    failureRedirect: `${process.env.FRONTEND_URL}/login`
+  }),
+  googleCallback
+);
+
 router.get(
   '/google/callback',
   verifyOAuthState,

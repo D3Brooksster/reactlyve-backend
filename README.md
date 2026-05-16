@@ -5,7 +5,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
 ## Features
 
 *   **Authentication:**
-    *   Google OAuth 2.0 for user sign-up and login.
+    *   Google, Microsoft, Facebook, and X (Twitter) OAuth login.
     *   JWT (JSON Web Tokens) for securing API access.
     *   Tokens are set in an HTTP-only `token` cookie to mitigate XSS risks.
     *   OAuth login uses a short-lived `state` cookie to prevent CSRF attacks.
@@ -61,7 +61,7 @@ This is the backend service for the Reactlyve application, providing API endpoin
         ```bash
         psql -U your_postgres_user -d your_database_name -f migration.sql
         ```
-    *   The project also uses incremental migrations located in the `migrations/` directory. For example, `migrations/V1__add_last_login_to_users.sql` adds the `last_login` column to the `users` table. These should be applied in order after the base schema.
+   *   The project also uses incremental migrations located in the `migrations/` directory. For example, `migrations/V1__add_last_login_to_users.sql` adds the `last_login` column to the `users` table. Apply each migration in order after the base schema, including the new `migrations/202507011200_auth_providers.sql` file which adds columns for the Microsoft, Facebook, and Twitter IDs.
     *   *Note:* For a more robust migration management system, consider integrating tools like Flyway or `node-pg-migrate` if not already implicitly used. The current setup requires manual application or a custom script.
 
 ### Running the Application
@@ -111,6 +111,21 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback # Adjust if your port or path differs
 
+# Microsoft OAuth Credentials
+MS_CLIENT_ID=your_microsoft_client_id
+MS_CLIENT_SECRET=your_microsoft_client_secret
+MS_CALLBACK_URL=http://localhost:3000/api/auth/microsoft/callback
+
+# Facebook OAuth Credentials
+FB_CLIENT_ID=your_facebook_app_id
+FB_CLIENT_SECRET=your_facebook_app_secret
+FB_CALLBACK_URL=http://localhost:3000/api/auth/facebook/callback
+
+# Twitter (X) OAuth Credentials
+TWITTER_CONSUMER_KEY=your_twitter_consumer_key
+TWITTER_CONSUMER_SECRET=your_twitter_consumer_secret
+TWITTER_CALLBACK_URL=http://localhost:3000/api/auth/twitter/callback
+
 # Cloudinary Credentials
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
@@ -137,7 +152,28 @@ JWT_SECRET=your_very_strong_and_secret_jwt_key # Secret for signing JWTs
 JWT_EXPIRES_IN=1h # Token expiry, e.g., 1h or 7d
 ```
 
-**Note:** Ensure `GOOGLE_CALLBACK_URL` matches the redirect URI configured in your Google Cloud Console for the OAuth client.
+**Note:** Ensure each callback URL (`GOOGLE_CALLBACK_URL`, `MS_CALLBACK_URL`, `FB_CALLBACK_URL`, and `TWITTER_CALLBACK_URL`) matches the redirect URI configured in the respective developer portals.
+
+### Creating OAuth Providers
+
+1. **Google**: Create credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and obtain a Client ID and Secret. Set an authorized redirect URL matching `GOOGLE_CALLBACK_URL`.
+2. **Microsoft**: Register an application in the [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade). Add a redirect URI matching `MS_CALLBACK_URL` and grant the `user.read` permission.
+3. **Facebook**: Create an app in the [Facebook Developer Console](https://developers.facebook.com/). Configure the OAuth redirect to `FB_CALLBACK_URL` and enable the email permission.
+4. **X (Twitter)**: Create a project and app in the [Twitter Developer Portal](https://developer.twitter.com/). Set the callback URL to `TWITTER_CALLBACK_URL` and enable access to email if required.
+
+After creating the credentials:
+
+1. Copy each provider's ID and secret into your `.env` file using the variables listed above.
+2. Install the new Passport strategy packages:
+   ```bash
+   npm install
+   ```
+   If `NODE_ENV` is set to `production`, run `npm install --include=dev` so Jest and other dev tools are available.
+3. Apply the migration `migrations/202507011200_auth_providers.sql` to add the new provider columns to the `users` table:
+   ```bash
+   psql -U your_postgres_user -d your_database_name -f migrations/202507011200_auth_providers.sql
+   ```
+4. Restart the server so Passport picks up the new configuration.
 
 ## API Endpoints
 

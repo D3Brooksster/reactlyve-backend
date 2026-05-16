@@ -9,12 +9,15 @@ import { log } from "../utils/logger";
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rows: users } = await query(
-      'SELECT id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login, moderate_images, moderate_videos FROM users ORDER BY created_at DESC',
+      'SELECT id, google_id, microsoft_id, facebook_id, twitter_id, email, name, picture, role, blocked, created_at, updated_at, last_login, moderate_images, moderate_videos FROM users ORDER BY created_at DESC',
       []
     );
     const formattedUsers = users.map(user => ({
       id: user.id,
       googleId: user.google_id,
+      microsoftId: user.microsoft_id,
+      facebookId: user.facebook_id,
+      twitterId: user.twitter_id,
       email: user.email,
       name: user.name,
       picture: user.picture,
@@ -70,6 +73,9 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     const formattedUser = {
       id: updatedUser.id,
       googleId: updatedUser.google_id, // Assuming google_id might be returned, though not in SELECT
+      microsoftId: updatedUser.microsoft_id,
+      facebookId: updatedUser.facebook_id,
+      twitterId: updatedUser.twitter_id,
       email: updatedUser.email,
       name: updatedUser.name,
       picture: updatedUser.picture, // Assuming picture might be returned
@@ -345,7 +351,7 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
     // Fetch all relevant fields, including the new and modified ones
     const selectQuery = `
       SELECT
-        id, google_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
+        id, google_id, microsoft_id, facebook_id, twitter_id, email, name, picture, role, blocked, created_at, updated_at, last_login,
         max_messages_per_month, current_messages_this_month,
         max_reactions_per_month, reactions_received_this_month,
         last_usage_reset_date, max_reactions_per_message,
@@ -365,6 +371,9 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
     res.status(200).json({
       id: user.id,
       googleId: user.google_id,
+      microsoftId: user.microsoft_id,
+      facebookId: user.facebook_id,
+      twitterId: user.twitter_id,
       email: user.email,
       name: user.name,
       picture: user.picture,
